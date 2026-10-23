@@ -331,7 +331,9 @@
     "reset_confirm_again": "Really reset? This cannot be undone.",
     "reset_failed": "Reset failed. Try again.",
     "restarting": "Restarting…",
-    "donate": "Support the project"
+    "donate": "Support the project",
+    "donate_this": "this project",
+    "donate_original": "original project"
   },
   "onboarding": {
     "step1_title": "Inverter Connection",

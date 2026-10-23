@@ -2314,9 +2314,10 @@ body.fullscreen-mode.page-scrolled .scroll-hint {
     background: rgba(255,255,255,0.2);
 }
 
+/* Donate links: one per author, the name highlighted, its role after it */
 .donate-link {
     display: block;
-    text-align: center;
+    padding: 4px 0;
     color: #a78bfa;
     font-size: 0.85rem;
     text-decoration: none;
@@ -2324,6 +2325,14 @@ body.fullscreen-mode.page-scrolled .scroll-hint {
 }
 .donate-link:hover {
     color: #c4b5fd;
+}
+.donate-role {
+    margin-left: 4px;
+    color: #64748b;
+    font-size: 0.75rem;
+}
+.donate-role::before {
+    content: "· ";
 }
 
 .settings-btn.reset-btn {
