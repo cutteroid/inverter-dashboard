@@ -1,11 +1,11 @@
 services:
-  deye-dashboard:
+  inverter-dashboard:
     # Built locally; the name lets tools/export_images.sh ship it to another machine
     image: extended-dashboard:latest
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: deye-dashboard
+    container_name: inverter-dashboard
     ports:
       - "8080:8080"
     # Configuration is read from ./data/.env (the app loads it via python-dotenv).
@@ -21,7 +21,7 @@ services:
 
     # Network configuration
     networks:
-      - deye-network
+      - inverter-network
 
     # Logging configuration
     logging:
@@ -35,7 +35,7 @@ services:
   # data/.env (without them the broker isn't reachable from the network)
   mosquitto:
     image: eclipse-mosquitto:2.0.20
-    container_name: deye-mosquitto
+    container_name: inverter-mosquitto
     entrypoint: ["/bin/sh", "/mosquitto-entrypoint.sh"]
     ports:
       - "1883:1883"
@@ -47,7 +47,7 @@ services:
       - ./data:/dashboard-data:ro
     restart: unless-stopped
     networks:
-      - deye-network
+      - inverter-network
     logging:
       driver: "json-file"
       options:
@@ -55,6 +55,6 @@ services:
         max-file: "3"
 
 networks:
-  deye-network:
+  inverter-network:
     driver: bridge
 

@@ -13,49 +13,106 @@ body {
 }
 
 /* Lift all content above battery-overlay (z-index:0) for iOS fullscreen compatibility */
-.header, .status-banner-container, .fullscreen-banner-wrapper, .dashboard, .notification-setup {
+.status-banner-container, .fullscreen-banner-wrapper, .dashboard, .notification-setup {
     position: relative;
     z-index: 1;
 }
 
+/* App bar: a slim bar across the top that stays while the page scrolls. The
+   settings and fullscreen buttons are fixed at its right end (top: 10px, see
+   .settings-toggle-btn / .fullscreen-btn), so the bar keeps room for them. It
+   reaches the window's edges through the body padding (--page-pad). */
+:root {
+    --page-pad: 20px;
+}
+
 .header {
-    text-align: center;
-    margin-bottom: 30px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 64px;
+    margin: calc(-1 * var(--page-pad)) calc(-1 * var(--page-pad)) 24px;
+    padding: 10px 140px 10px var(--page-pad);
+    box-sizing: border-box;
+    background: rgba(17, 22, 43, 0.72);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+html.low-power .header {
+    background: rgba(20, 26, 48, 0.97);   /* no blur in low power mode: opaque instead */
+}
+
+.app-bar-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.app-bar-icon {
+    font-size: 1.3rem;
+    line-height: 1;
 }
 
 .header h1 {
-    font-size: 2rem;
-    font-weight: 300;
-    margin-bottom: 5px;
+    font-size: 1.2rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.header .status {
-    font-size: 0.9rem;
-    color: #888;
+/* Status pill (app bar, and under the clock in fullscreen): a coloured dot and
+   how old the readings are */
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    color: #cbd5e1;
+    background: rgba(148, 163, 184, 0.12);
+    border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
-.header .status.online {
-    color: #6ec89b;
+.status-pill::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #94a3b8;
 }
 
-.header .status.error {
-    color: #f87171;
-}
+.status-pill.online { color: #86efac; background: rgba(74, 222, 128, 0.1); border-color: rgba(74, 222, 128, 0.25); }
+.status-pill.online::before { background: #4ade80; box-shadow: 0 0 6px rgba(74, 222, 128, 0.8); }
+.status-pill.stale,
+.status-pill.loading { color: #fcd34d; background: rgba(251, 191, 36, 0.1); border-color: rgba(251, 191, 36, 0.25); }
+.status-pill.stale::before,
+.status-pill.loading::before { background: #fbbf24; }
+.status-pill.error { color: #fca5a5; background: rgba(248, 113, 113, 0.1); border-color: rgba(248, 113, 113, 0.3); }
+.status-pill.error::before { background: #f87171; }
 
-.header .status.loading {
-    color: #facc15;
-    animation: pulse-loading 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse-loading {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
+/* Narrow phones: the icon stands for the name, so the status pill fits */
+@media (max-width: 420px) {
+    .header h1 {
+        display: none;
+    }
 }
 
 /* Unsupported inverter type (see applyInverterConfig) */
 .inverter-warning {
     max-width: 640px;
-    margin: 10px auto 0;
+    margin: -8px auto 20px;
     padding: 8px 14px;
     font-size: 0.85rem;
     color: #fca5a5;
@@ -71,7 +128,7 @@ body {
 /* Fullscreen button */
 .fullscreen-btn {
     position: fixed;
-    top: 20px;
+    top: 10px;
     right: 20px;
     width: 44px;
     height: 44px;
@@ -1255,8 +1312,8 @@ body.cards-dragging * {
         padding: 15px;
     }
 
-    .header h1 {
-        font-size: 1.8rem;
+    :root {
+        --page-pad: 15px;
     }
 
     .status-banner-container {
@@ -1294,10 +1351,6 @@ body.cards-dragging * {
 @media (max-width: 840px) {
     .header {
         margin-bottom: 20px;
-    }
-
-    .header h1 {
-        font-size: 1.6rem;
     }
 
     .status-banner-container {
@@ -1354,12 +1407,13 @@ body.cards-dragging * {
         padding: 12px;
     }
 
-    .header {
-        margin-bottom: 16px;
+    :root {
+        --page-pad: 12px;
     }
 
-    .header h1 {
-        font-size: 1.4rem;
+    .header {
+        margin-bottom: 16px;
+        padding-right: 110px;   /* the two 40 px buttons */
     }
 
     .fullscreen-btn {
@@ -1369,12 +1423,6 @@ body.cards-dragging * {
         height: 40px;
     }
 
-    .settings-toggle-btn {
-        top: 12px;
-        right: 58px;
-        width: 40px;
-        height: 40px;
-    }
 
     .grid-status-banner {
         padding: 16px 20px;
@@ -1431,6 +1479,7 @@ body.fullscreen-mode {
 }
 
 body.fullscreen-mode .header,
+body.fullscreen-mode .inverter-warning,
 body.fullscreen-mode .notification-setup,
 body.fullscreen-mode .settings-toggle-btn {
     display: none !important;   /* only the fullscreen (exit) button stays */
@@ -1590,14 +1639,32 @@ body.fullscreen-mode .weather-forecast-banner {
     color: #fff;
 }
 
+body.fullscreen-mode .weather-forecast-clock-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding-right: 20px;
+    border-right: 1px solid rgba(255, 255, 255, 0.15);
+}
+
 body.fullscreen-mode .weather-forecast-clock {
     font-size: 2.6rem;
     font-weight: 700;
     line-height: 1;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-    padding-right: 20px;
-    border-right: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+body.fullscreen-mode .weather-forecast-clock-block .status-pill {
+    padding: 3px 9px;
+    gap: 6px;
+    font-size: 0.7rem;
+}
+
+body.fullscreen-mode .weather-forecast-clock-block .status-pill::before {
+    width: 6px;
+    height: 6px;
 }
 
 body.fullscreen-mode .weather-forecast-current {
@@ -1620,12 +1687,17 @@ body.fullscreen-mode .weather-forecast-desc {
     font-size: 1.1rem;
     opacity: 0.85;
     margin-top: 2px;
+    /* A long description ("Мінлива хмарність") takes a second line here
+       instead of pushing tomorrow's forecast onto a second row */
+    max-width: 9em;
 }
 
+/* High / low and sunrise / sunset as two short rows: one long row pushed
+   tomorrow's forecast onto a second line with longer (uk / ru) texts */
 body.fullscreen-mode .weather-forecast-details {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 18px;
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 4px 18px;
     font-size: 1.1rem;
     opacity: 0.85;
 }
@@ -1670,6 +1742,7 @@ body.fullscreen-mode .weather-tomorrow-desc {
     font-size: 0.95rem;
     opacity: 0.85;
     margin-top: 2px;
+    max-width: 10em;   /* as above */
 }
 
 /* Planned Outages Banner: full-width row under the status banners */
@@ -1757,11 +1830,37 @@ body.fullscreen-mode.alerts-enabled:not(.has-generator):not(.outages-disabled) .
     gap: 16px;
 }
 
-/* Short screens (e.g. 1024x768 tablets): compact first screen so all rows fit */
+/* Short screens (e.g. 1024x768, 1280x800): compact first screen so all rows
+   fit. Like the 960x600 layout, the first screen is exactly the window's
+   height and the bottom row (planned outages | alerts map) gets what's left,
+   with the map scaled to it, so the page never needs scrolling to see it all. */
 @media (max-height: 820px) {
     body.fullscreen-mode .fullscreen-banner-wrapper {
-        padding-top: 24px;
-        padding-bottom: 84px;
+        height: 100vh;
+        min-height: 0;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        align-content: stretch;
+        gap: 16px;
+        padding-top: 20px;
+        padding-bottom: 52px;   /* room for the (smaller) scroll hint */
+    }
+
+    body.fullscreen-mode .planned-outages-banner,
+    body.fullscreen-mode.alerts-enabled .alerts-banner {
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    body.fullscreen-mode .alerts-banner .alerts-map svg {
+        width: 100%;
+        height: 100%;
+        max-height: none;
+    }
+
+    body.fullscreen-mode .scroll-hint {
+        bottom: 8px;
+        width: 36px;
+        height: 36px;
     }
 
     body.fullscreen-mode .dashboard {
@@ -2202,7 +2301,7 @@ body.fullscreen-mode.page-scrolled .scroll-hint {
 /* Settings Panel */
 .settings-toggle-btn {
     position: fixed;
-    top: 20px;
+    top: 10px;
     right: 74px;
     width: 44px;
     height: 44px;
@@ -2217,6 +2316,16 @@ body.fullscreen-mode.page-scrolled .scroll-hint {
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+/* Phones: smaller buttons (here, after the rule above, so this one wins) */
+@media (max-width: 640px) {
+    .settings-toggle-btn {
+        top: 12px;
+        right: 58px;
+        width: 40px;
+        height: 40px;
+    }
 }
 
 .settings-toggle-btn:hover {
@@ -2785,7 +2894,15 @@ html.low-power .pin-overlay {
 
     body.fullscreen-mode .weather-forecast-clock {
         font-size: 1.8rem;
-        padding-right: 20px;
+    }
+
+    body.fullscreen-mode .weather-forecast-clock-block {
+        gap: 4px;
+    }
+
+    body.fullscreen-mode .weather-forecast-clock-block .status-pill {
+        padding: 1px 7px;
+        font-size: 0.62rem;
     }
 
     body.fullscreen-mode .weather-forecast-current {
@@ -2805,9 +2922,11 @@ html.low-power .pin-overlay {
         font-size: 0.8rem;
         margin-top: 0;
         white-space: nowrap;
+        max-width: none;
     }
 
     body.fullscreen-mode .weather-forecast-details {
+        display: flex;   /* one line on short screens */
         flex-wrap: nowrap;
         gap: 14px;
         font-size: 0.95rem;

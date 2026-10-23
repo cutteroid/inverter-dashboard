@@ -135,8 +135,13 @@ printf '%s\n' "$SUDO_PW" | "${SSH[@]}" "$NAS_SSH" "set -e; cd '$NAS_DIR'
     else DC=\$(command -v docker-compose || echo /usr/local/bin/docker-compose); fi
     # Reuse the compose project of the running containers (Container Manager names
     # it after the Project, not the folder); otherwise compose would try to create
-    # a second set with the same container names
-    PROJECT=\$(s \"\$DOCKER\" inspect -f '{{index .Config.Labels \"com.docker.compose.project\"}}' deye-dashboard 2>/dev/null || true)
+    # a second set with the same container names. Older versions named the containers
+    # deye-dashboard / deye-mosquitto: looked up under those names too.
+    PROJECT=
+    for c in inverter-dashboard deye-dashboard; do
+        PROJECT=\$(s \"\$DOCKER\" inspect -f '{{index .Config.Labels \"com.docker.compose.project\"}}' \"\$c\" 2>/dev/null || true)
+        case \"\$PROJECT\" in ''|'<no value>') PROJECT= ;; *) break ;; esac
+    done
     case \"\$PROJECT\" in ''|'<no value>') PROJECT=\$(basename \"\$PWD\") ;; esac
     echo \"Compose project: \$PROJECT\"
     # No terminal on the NAS side (stdin carries the password): show the build as
@@ -148,7 +153,14 @@ printf '%s\n' "$SUDO_PW" | "${SSH[@]}" "$NAS_SSH" "set -e; cd '$NAS_DIR'
         echo 'Build failed:'; grep -v '^__EXIT__' \"\$LOG\" | tail -n 40; rm -f \"\$LOG\"; exit 1
     fi
     rm -f \"\$LOG\"
-    s \$DC -p \"\$PROJECT\" up -d
+    # Renamed containers (deye-* -> inverter-*): remove the old ones first, they hold
+    # ports 8080 / 1883 (the data stays in data/)
+    for old in deye-dashboard deye-mosquitto; do
+        if s \"\$DOCKER\" inspect \"\$old\" >/dev/null 2>&1; then
+            echo \"Replacing the old container \$old\"; s \"\$DOCKER\" rm -f \"\$old\" >/dev/null
+        fi
+    done
+    s \$DC -p \"\$PROJECT\" up -d --remove-orphans
     s \"\$DOCKER\" image prune -f >/dev/null   # drop the replaced image
     s \$DC -p \"\$PROJECT\" ps"
 unset SUDO_PW

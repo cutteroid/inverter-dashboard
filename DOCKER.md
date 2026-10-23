@@ -2,6 +2,8 @@
 
 How to build and run the dashboard with Docker. For all settings and features see the [main README](README.md).
 
+> **Made for a dashboard screen:** the dashboard is meant to be shown on a wall-mounted tablet or another always-on screen on your home network, not as a public web service. Run the container on a machine in your home (a NAS, a Raspberry Pi) and don't expose port 8080 to the internet.
+
 ## How configuration works
 
 The container keeps **everything it stores in `./data`**, mounted at `/app/data`:
@@ -38,8 +40,8 @@ docker compose up -d --build
 
 | Container | Purpose | Port |
 |-----------|---------|------|
-| `deye-dashboard` | The dashboard | 8080 |
-| `deye-mosquitto` | MQTT broker for the optional smart meter; reachable from the network only once `SMART_METER_MQTT_USER` / `SMART_METER_MQTT_PASSWORD` are set in `data/.env` | 1883 |
+| `inverter-dashboard` | The dashboard | 8080 |
+| `inverter-mosquitto` | MQTT broker for the optional smart meter; reachable from the network only once `SMART_METER_MQTT_USER` / `SMART_METER_MQTT_PASSWORD` are set in `data/.env` | 1883 |
 
 Logs and stopping:
 
@@ -51,21 +53,21 @@ docker compose down
 ### Docker CLI
 
 ```bash
-docker build -t deye-dashboard:latest .
+docker build -t inverter-dashboard:latest .
 
 docker run -d \
-  --name deye-dashboard \
+  --name inverter-dashboard \
   -p 8080:8080 \
   -v $(pwd)/data:/app/data \
   --restart unless-stopped \
-  deye-dashboard:latest
+  inverter-dashboard:latest
 ```
 
 The configuration comes from `./data/.env` (or the setup wizard), as with Compose. This runs only the dashboard. For the smart meter's broker, use Compose.
 
 ```bash
-docker logs -f deye-dashboard
-docker stop deye-dashboard && docker rm deye-dashboard
+docker logs -f inverter-dashboard
+docker stop inverter-dashboard && docker rm inverter-dashboard
 ```
 
 ## Configuration
@@ -101,7 +103,7 @@ The dashboard runs as user `1000` inside the container, so it needs write access
 
 ## Networking
 
-- The services share the bridge network `deye-network`. The dashboard reaches the broker as `mosquitto`.
+- The services share the bridge network `inverter-network`. The dashboard reaches the broker as `mosquitto`.
 - From the host, the dashboard is at `http://localhost:8080`. From other devices, use `http://<host-ip>:8080`.
 - The container reaches devices on your local network (the inverter's logger, a smart meter) through the host. If they're on a separate IoT / guest network, the router has to allow exactly that traffic; see [Devices on a Separate IoT Network](README.md#devices-on-a-separate-iot-network).
 
@@ -111,7 +113,7 @@ The image has a built-in health check: it requests `/api/data` every 30 seconds,
 
 ```bash
 docker ps
-docker inspect deye-dashboard --format='{{.State.Health.Status}}'
+docker inspect inverter-dashboard --format='{{.State.Health.Status}}'
 ```
 
 ## Updating
@@ -129,10 +131,10 @@ The image is built locally from the source, so there's nothing to `docker pull`.
 ## Building images
 
 ```bash
-docker build -t myregistry/deye-dashboard:2.0.1 .
+docker build -t myregistry/inverter-dashboard:2.0.1 .
 
 # Several architectures (requires buildx)
-docker buildx build --platform linux/amd64,linux/arm64 -t myregistry/deye-dashboard:2.0.1 .
+docker buildx build --platform linux/amd64,linux/arm64 -t myregistry/inverter-dashboard:2.0.1 .
 ```
 
 ## Troubleshooting
@@ -140,7 +142,7 @@ docker buildx build --platform linux/amd64,linux/arm64 -t myregistry/deye-dashbo
 ### Container won't start / setup wizard appears every time
 
 ```bash
-docker compose logs deye-dashboard
+docker compose logs inverter-dashboard
 ```
 
 - If the wizard keeps appearing, the dashboard can't read a valid `data/.env`. Check that the file exists; the container log says if it had to fix the folder's permissions (see above).
@@ -151,7 +153,7 @@ docker compose logs deye-dashboard
 Check that the logger is reachable from the container:
 
 ```bash
-docker exec deye-dashboard python -c "import socket; socket.create_connection(('192.168.1.100', 8899), 3); print('logger reachable')"
+docker exec inverter-dashboard python -c "import socket; socket.create_connection(('192.168.1.100', 8899), 3); print('logger reachable')"
 ```
 
 If it isn't, the logger may be on another network (see Networking).
@@ -159,10 +161,10 @@ If it isn't, the logger may be on another network (see Networking).
 ### Resource usage
 
 ```bash
-docker stats deye-dashboard
+docker stats inverter-dashboard
 ```
 
-To limit resources, add to the `deye-dashboard` service in `docker-compose.yml`:
+To limit resources, add to the `inverter-dashboard` service in `docker-compose.yml`:
 
 ```yaml
     deploy:
@@ -188,9 +190,9 @@ To limit resources, add to the `deye-dashboard` service in `docker-compose.yml`:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./ssl:/etc/nginx/ssl:ro
     depends_on:
-      - deye-dashboard
+      - inverter-dashboard
     networks:
-      - deye-network
+      - inverter-network
     restart: unless-stopped
 ```
 

@@ -77,7 +77,8 @@ function applyTranslations() {
         });
     });
     document.documentElement.lang = i18nLang;
-    document.title = t('app.title');
+    // A name set in the settings (DASHBOARD_TITLE) stays as typed; else the translated default
+    document.title = window.DASHBOARD_CONFIG.title || t('app.title');
     renderLanguageOptions();
 }
 
@@ -749,6 +750,47 @@ function noDataFor(lastOkAt) { return !lastOkAt || Date.now() - lastOkAt > STALE
 var dashboardOkAt = 0;   // last answer with readings
 var DASHBOARD_REQUEST_TIMEOUT_MS = 15000;
 
+// Header status pill: how old the readings are ("Live · 12 s ago", ticking),
+// amber "Updated 3 min ago" once they're older than a few polls (the server
+// keeps the last good readings for up to 5 minutes). The exact time is in the
+// pill's tooltip. statusMode "other": loading / an error text is shown instead.
+var LIVE_MAX_AGE_S = 90;
+var dataTakenAt = null;
+var statusMode = 'other';
+
+function formatAge(seconds) {
+    if (seconds < 10) return t('status.age_now');
+    if (seconds < 60) return t('status.age_s', { n: Math.floor(seconds) });
+    if (seconds < 3600) return t('status.age_min', { n: Math.floor(seconds / 60) });
+    return t('status.age_h', { n: Math.floor(seconds / 3600) });
+}
+
+// Both status pills: the app bar's and the one under the fullscreen clock.
+// shortKey / shortParams: a shorter text for the fullscreen one, which must
+// stay no wider than the clock (else the weather banner wraps)
+var STATUS_STATES = ['online', 'stale', 'loading', 'error'];
+
+function showStatus(key, params, state, title, shortKey, shortParams) {
+    [['status', key, params], ['fullscreen-status', shortKey || key, shortKey ? shortParams : params]].forEach(function(p) {
+        var el = document.getElementById(p[0]);
+        if (!el) return;
+        setI18nText(el, p[1], p[2]);
+        STATUS_STATES.forEach(function(s) { el.classList.toggle(s, s === state); });
+        el.title = title || '';
+    });
+}
+
+function renderLiveStatus() {
+    if (statusMode !== 'live' || dataTakenAt === null) return;
+    var age = Math.max(0, (Date.now() - dataTakenAt) / 1000);
+    var live = age <= LIVE_MAX_AGE_S;
+    showStatus(live ? 'status.live' : 'status.stale', { age: formatAge(age) }, live ? 'online' : 'stale',
+               t('status.updated_at', { time: new Date(dataTakenAt).toLocaleTimeString(i18nLocale()) }),
+               live ? 'status.live_short' : 'status.stale_short', { age: formatAge(age) });
+}
+
+setInterval(renderLiveStatus, 1000);
+
 function updateDashboard() {
     if (dashboardRequestInFlight) return;
     dashboardRequestInFlight = true;
@@ -758,12 +800,11 @@ function updateDashboard() {
         .then(response => response.json())
         .then(data => {
             if (data.error) {
+                statusMode = 'other';
                 if (data.error === 'not yet available') {
-                    setI18nText(document.getElementById('status'), 'status.pulling');
-                    document.getElementById('status').className = 'status loading';
+                    showStatus('status.pulling', null, 'loading', '', 'status.pulling_short');
                 } else {
-                    setI18nText(document.getElementById('status'), 'common.error', { message: data.error });
-                    document.getElementById('status').className = 'status error';
+                    showStatus('common.error', { message: data.error }, 'error', '', 'status.error_short');
                 }
                 // Apply config even on error so UI elements stay visible
                 if (data.config) {
@@ -775,9 +816,9 @@ function updateDashboard() {
             // "Updated" = when the readings were taken (the server keeps the last
             // good ones through a failed inverter poll)
             dashboardOkAt = Date.now();
-            var takenAt = new Date(Date.now() - (data.data_age_seconds || 0) * 1000);
-            setI18nText(document.getElementById('status'), 'status.online', { time: takenAt.toLocaleTimeString(i18nLocale()) });
-            document.getElementById('status').className = 'status online';
+            dataTakenAt = Date.now() - (data.data_age_seconds || 0) * 1000;
+            statusMode = 'live';
+            renderLiveStatus();
 
             // Apply config once when first received
             if (data.config) {
@@ -934,8 +975,8 @@ function updateDashboard() {
             // A failed request: the last readings and their time stay until
             // nothing has arrived for a while
             if (!noDataFor(dashboardOkAt)) return;
-            setI18nText(document.getElementById('status'), 'status.connection_failed');
-            document.getElementById('status').className = 'status error';
+            statusMode = 'other';
+            showStatus('status.connection_failed', null, 'error', '', 'status.offline_short');
         })
         .finally(function() {
             if (timeoutId) clearTimeout(timeoutId);
@@ -1951,6 +1992,8 @@ function showOnboarding(editMode) {
                 if (cfg.GENERATOR_FUEL_RATE) document.getElementById('onb-gen-fuel').value = cfg.GENERATOR_FUEL_RATE;
                 if (cfg.GENERATOR_OIL_CHANGE_DATE) document.getElementById('onb-gen-oil').value = cfg.GENERATOR_OIL_CHANGE_DATE;
 
+                document.getElementById('onb-title').value = cfg.DASHBOARD_TITLE || '';
+
                 // Telegram
                 if (cfg.TELEGRAM_ENABLED && cfg.TELEGRAM_ENABLED.toLowerCase() === 'true') {
                     var tgToggle = document.getElementById('onb-tg-toggle');
@@ -2231,6 +2274,9 @@ function saveConfig() {
         config.OUTAGE_DTEK_REGION = document.getElementById('onb-dtek-region').value;
         config.OUTAGE_GROUP = document.getElementById('onb-dtek-group').value.trim() || '1.1';
     }
+
+    // Step 5 — Dashboard name (empty: the translated default)
+    config.DASHBOARD_TITLE = document.getElementById('onb-title').value.trim();
 
     // Step 5 — Generator
     var genOn = document.getElementById('onb-gen-toggle').classList.contains('on');

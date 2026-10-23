@@ -29,6 +29,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/inverter-dashboard
-          short-description: Web dashboard for hybrid solar inverters with battery, grid, outages and air alerts
+          short-description: Wall-tablet dashboard for hybrid solar inverters with battery, grid, outages and alerts
           readme-filepath: ./docs/dockerhub.md
           enable-url-completion: true

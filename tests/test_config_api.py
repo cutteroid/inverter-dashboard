@@ -428,6 +428,18 @@ class TestRestart:
         assert mock_run.call_args[0][0][:2] == ["sudo", "-n"]
         mock_exit.assert_not_called()
 
+    @pytest.mark.parametrize("env,service", [({}, "inverter-dashboard"),
+                                             ({"DEPLOY_SERVICE_NAME": "deye-dashboard"}, "deye-dashboard")])
+    def test_restarts_the_configured_service(self, env, service, monkeypatch):
+        """deploy.sh's service name (from .env); installs that kept the old name still restart."""
+        import app as app_module
+        monkeypatch.delenv("DEPLOY_SERVICE_NAME", raising=False)
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        with patch("app.subprocess.run") as mock_run, patch("app.os._exit"):
+            app_module._restart_now()
+        assert mock_run.call_args[0][0] == ["sudo", "-n", "systemctl", "restart", service]
+
     def test_falls_back_to_nonzero_exit(self):
         import app as app_module
         import subprocess

@@ -25,7 +25,7 @@ OUT=dist/$NAME
 if [ "$ARCH" = "$HOST_ARCH" ]; then
     TAG=latest
     echo "==> Building $APP_IMAGE:$TAG"
-    docker compose build deye-dashboard
+    docker compose build inverter-dashboard
 else
     # Separate tag, so the local (native) image isn't replaced by a foreign one
     TAG=latest-$ARCH

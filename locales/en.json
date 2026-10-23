@@ -5,7 +5,7 @@
     "locale": "en-GB"
   },
   "app": {
-    "title": "Dashboard"
+    "title": "Home energy"
   },
   "common": {
     "cancel": "Cancel",
@@ -38,8 +38,19 @@
   "status": {
     "connecting": "Connecting...",
     "pulling": "Pulling data from inverter...",
-    "online": "Online - Updated {time}",
-    "connection_failed": "Connection failed"
+    "live": "Live · {age}",
+    "stale": "Updated {age}",
+    "age_now": "just now",
+    "age_s": "{n} s ago",
+    "age_min": "{n} min ago",
+    "age_h": "{n} h ago",
+    "updated_at": "Readings from {time}",
+    "connection_failed": "Connection failed",
+    "live_short": "Online",
+    "stale_short": "{age}",
+    "pulling_short": "Waiting",
+    "error_short": "Error",
+    "offline_short": "Offline"
   },
   "inverter": {
     "unsupported": "This inverter reports itself as a {type} (device type {code}). The dashboard can't read this inverter type yet, so the readings below are probably wrong.",
@@ -386,7 +397,7 @@
     "alerts_region": "Show on the map",
     "alerts_whole_ukraine": "Whole Ukraine",
     "step4_title": "Optional Features",
-    "step4_subtitle": "Configure generator tracking and Telegram bot.",
+    "step4_subtitle": "Name the dashboard, set up generator tracking and the Telegram bot.",
     "generator_connected": "Generator connected",
     "fuel_rate": "Fuel consumption (L/hour)",
     "oil_change_date": "Last oil change date",
@@ -405,6 +416,8 @@
     "save_failed": "Failed to save: {message}",
     "restarting_service": "Restarting service...",
     "ready": "Ready! Reloading...",
-    "taking_longer": "Taking longer than expected. Try refreshing manually."
+    "taking_longer": "Taking longer than expected. Try refreshing manually.",
+    "dashboard_title": "Dashboard name",
+    "dashboard_title_hint": "Shown at the top of the page and in the browser tab. Leave empty for the default."
   }
 }

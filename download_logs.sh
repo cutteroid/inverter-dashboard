@@ -41,7 +41,7 @@ set +a
 
 REMOTE_USER="${DEPLOY_USER:-}"
 REMOTE_HOST="${DEPLOY_HOST:-}"
-SERVICE_NAME="${DEPLOY_SERVICE_NAME:-deye-dashboard}"
+SERVICE_NAME="${DEPLOY_SERVICE_NAME:-inverter-dashboard}"
 
 if [ -z "$REMOTE_HOST" ] || [ -z "$REMOTE_USER" ]; then
     echo -e "${RED}Error: DEPLOY_HOST and DEPLOY_USER must be set in .env${NC}"

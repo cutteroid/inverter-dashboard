@@ -814,7 +814,9 @@ def index():
     """Serve the dashboard page."""
     region = os.environ.get("AIR_ALERTS_REGION", "").strip()
     # Read by dashboard.js as window.DASHBOARD_CONFIG (embedded as JSON)
+    title = os.environ.get("DASHBOARD_TITLE", "").strip()
     dashboard_config = {
+        "title": title,   # empty: the translated default
         "locales": LOCALES,
         "defaultLanguage": DEFAULT_LANGUAGE,
         "firstRun": not _configured,
@@ -825,7 +827,8 @@ def index():
         "inverterTypes": [{"id": d.name, "name": d.display_name} for d in DRIVERS.values()]
                          if len(DRIVERS) > 1 else [],
     }
-    return render_template("index.html", first_run=not _configured, dashboard_config=dashboard_config)
+    return render_template("index.html", first_run=not _configured, dashboard_config=dashboard_config,
+                           title=title)
 
 
 @app.route("/api/data")
@@ -1066,11 +1069,16 @@ def get_config():
     return jsonify(values)
 
 
+# systemd service deploy.sh installs (DEPLOY_SERVICE_NAME comes from .env, its EnvironmentFile)
+DEFAULT_SERVICE_NAME = "inverter-dashboard"
+
+
 def _restart_now():
     """Restart via systemd if possible, otherwise exit for the supervisor to restart us."""
+    service = os.environ.get("DEPLOY_SERVICE_NAME", "").strip() or DEFAULT_SERVICE_NAME
     try:
         # -n: fail instead of waiting for a password prompt
-        subprocess.run(["sudo", "-n", "systemctl", "restart", "deye-dashboard"],
+        subprocess.run(["sudo", "-n", "systemctl", "restart", service],
                        check=True, capture_output=True, timeout=15)
         return  # systemd stops this process
     except Exception as e:

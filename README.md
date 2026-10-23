@@ -4,6 +4,8 @@ A web dashboard for monitoring Deye solar inverters in real-time. Supports both 
 
 Maintained by [Cutteroid](https://github.com/cutteroid). Originally based on [deye-dashboard](https://github.com/ivanursul/deye-dashboard) by Ivan Ursul (MIT license, see [License](#license)).
 
+> **Made for a dashboard screen.** This project is meant to run on a tablet or another always-on screen mounted on the wall, as a home energy display: a fullscreen kiosk view with large banners, low power mode, and an automatic return to the first screen. It works in any browser on your home network, but it is **not** designed as a phone app or as a public web service. Keep it on your local network (the settings PIN is basic protection, not real authentication). Tested on a 7" Samsung tablet (960×600) and on larger tablet and desktop screens.
+
 ![Dashboard](docs/preview.png)
 
 The fullscreen kiosk view for a wall tablet:
@@ -66,6 +68,8 @@ What this project adds to the original [ivanursul/deye-dashboard](https://github
 
 This project is a **home energy dashboard** — a web page that shows you what your solar panels are producing, how much battery you have left, whether you're using grid power, and when the next power outage is scheduled.
 
+It is made to be shown on a **tablet on the wall** (or another screen that's always on), like a smart home display. You can also open it on a phone or computer at home to take a quick look.
+
 ### What you need
 
 1. **A Deye solar inverter** with a Solarman Wi-Fi logger stick (the small antenna plugged into your inverter). Most Deye hybrid inverters come with one.
@@ -102,6 +106,8 @@ You don't need to be a programmer, but you should be comfortable with basic comp
 ## Як це працює (для нетехнічних користувачів)
 
 Цей проект — це **домашня енергетична панель** — веб-сторінка, яка показує, скільки електроенергії виробляють ваші сонячні панелі, який заряд акумулятора, чи використовуєте ви електрику з мережі, та коли заплановане наступне відключення.
+
+Вона створена для **планшета на стіні** (або іншого екрана, що постійно увімкнений), як дисплей розумного будинку. Відкрити її можна й на телефоні чи комп'ютері вдома, щоб швидко глянути.
 
 ### Що вам потрібно
 
@@ -219,15 +225,15 @@ docker compose down
 
 ```bash
 # Build the image
-docker build -t deye-dashboard:latest .
+docker build -t inverter-dashboard:latest .
 
 # Run the container (configuration and data live in ./data, see Data Persistence)
 docker run -d \
-  --name deye-dashboard \
+  --name inverter-dashboard \
   -p 8080:8080 \
   -v $(pwd)/data:/app/data \
   --restart unless-stopped \
-  deye-dashboard:latest
+  inverter-dashboard:latest
 ```
 
 Don't pass the settings with `--env-file` / `-e`: environment variables take precedence over `data/.env`, so changes saved from the dashboard's settings would be ignored.
@@ -280,7 +286,7 @@ The container includes a built-in health check that pings the `/api/data` endpoi
 
 ```bash
 docker ps  # Shows health status
-docker inspect deye-dashboard --format='{{.State.Health.Status}}'
+docker inspect inverter-dashboard --format='{{.State.Health.Status}}'
 ```
 
 For detailed Docker configuration options, troubleshooting, and production deployment tips, see [DOCKER.md](DOCKER.md).
@@ -341,6 +347,14 @@ DTEK has no public API, so this provider reads the community feed [outage-data-u
 |----------|-------------|---------|
 | `OUTAGE_DTEK_REGION` | `kyiv-region` (Kyiv oblast), `kyiv`, `dnipro`, or `odesa` | `kyiv-region` |
 
+### Dashboard Name
+
+The app bar at the top shows the dashboard's name, the live status ("● Live · 12 s ago": green while the readings are fresh, amber "Updated 3 min ago" when they're older, red when the dashboard can't be reached) and the settings and fullscreen buttons. By default the name is "Home energy" in the dashboard's language; set your own in Settings → Edit configuration → step 5.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DASHBOARD_TITLE` | Name at the top of the page and in the browser tab (up to 40 characters, no `#`, quotes or `\`) | "Home energy", translated |
+
 ### Settings PIN
 
 The settings panel (gear button) opens without a PIN for local, per-device settings: language, low power mode and back to the first screen. Server-side settings — Edit Configuration and Factory Reset — are locked behind the settings PIN (**Unlock** in the panel) and lock again when the panel closes. The server enforces the same PIN on the API endpoints behind them: config read/save/reset, inverter discovery and clearing phase statistics. After 5 wrong attempts, PIN checks are locked for 60 seconds.
@@ -374,7 +388,7 @@ All three are also in Settings → Edit configuration, step 4 ("Air raid alerts"
 
 The **Smart meter** card shows live readings from a [Bakler](https://www.bakler.com.ua/) Wi-Fi electricity meter: current power, voltage and current (a per-phase table for three-phase meters, where a phase below 100 V is shown as "No voltage"), mains frequency and the relay state. When the meter or the broker is unavailable, a badge says so (Waiting for data / Meter offline / No recent data / MQTT broker unavailable) and the last known readings are dimmed. The relay is shown only; the dashboard never switches it.
 
-The meter talks MQTT: it connects to a broker and publishes its readings there ([MQTT docs, in Ukrainian](https://www.bakler.com.ua/setting-mqtt-client/)). `docker compose` starts a Mosquitto broker (`deye-mosquitto`, port 1883) next to the dashboard.
+The meter talks MQTT: it connects to a broker and publishes its readings there ([MQTT docs, in Ukrainian](https://www.bakler.com.ua/setting-mqtt-client/)). `docker compose` starts a Mosquitto broker (`inverter-mosquitto`, port 1883) next to the dashboard.
 
 1. Add to `data/.env` (choose your own user name and password):
    ```
@@ -478,8 +492,8 @@ The bot also provides a keyboard with Ukrainian-labeled buttons for quick access
 |----------|-------------|---------|
 | `DEPLOY_HOST` | Remote server IP or hostname | `192.168.1.50` |
 | `DEPLOY_USER` | SSH user on the remote server | `pi` |
-| `DEPLOY_DIR` | Installation directory on the remote server | `/home/pi/deye-dashboard` |
-| `DEPLOY_SERVICE_NAME` | Systemd service name | `deye-dashboard` |
+| `DEPLOY_DIR` | Installation directory on the remote server | `/home/pi/inverter-dashboard` |
+| `DEPLOY_SERVICE_NAME` | Systemd service name (installs that used the old name `deye-dashboard` keep it while it's saved in `.env`; set this to rename it, and `deploy.sh` replaces the old service) | `inverter-dashboard` |
 
 ## Local Development
 
@@ -549,16 +563,16 @@ To change settings, edit `.env` directly and re-deploy.
 
 ```bash
 # Check status
-ssh user@host 'sudo systemctl status deye-dashboard'
+ssh user@host 'sudo systemctl status inverter-dashboard'
 
 # View live logs
-ssh user@host 'sudo journalctl -u deye-dashboard -f'
+ssh user@host 'sudo journalctl -u inverter-dashboard -f'
 
 # Restart after config changes
-ssh user@host 'sudo systemctl restart deye-dashboard'
+ssh user@host 'sudo systemctl restart inverter-dashboard'
 
 # Stop the service
-ssh user@host 'sudo systemctl stop deye-dashboard'
+ssh user@host 'sudo systemctl stop inverter-dashboard'
 ```
 
 ## Finding Your Inverter Details
@@ -619,7 +633,7 @@ On ASUS routers the IoT network ("Guest Network Pro") has only an all-or-nothing
 4. Make it executable and apply it: `chmod a+rx /jffs/scripts/firewall-start`, then `service restart_firewall` (or reboot). The router runs the script again after every firewall restart, and it survives firmware updates.
 5. Use the logger's IoT address as `INVERTER_IP` (Settings → Edit configuration). Network scan can't find it from the home network, so enter it by hand. Point the meter's MQTT settings at the dashboard host's home-network address (see [Smart Meter](#smart-meter-optional)).
 
-**Check:** from the dashboard host, `docker exec deye-dashboard python -c "import socket; socket.create_connection(('192.168.20.30', 8899), 3); print('logger reachable')"`; for the meter, `docker logs deye-mosquitto` shows a client connecting from its address. If the dashboard host has its own firewall (e.g. Synology: Control Panel → Security → Firewall), allow TCP 1883 from the meter there as well. If a check fails, `iptables -S FORWARD` on the router shows whether the rules are in place.
+**Check:** from the dashboard host, `docker exec inverter-dashboard python -c "import socket; socket.create_connection(('192.168.20.30', 8899), 3); print('logger reachable')"`; for the meter, `docker logs inverter-mosquitto` shows a client connecting from its address. If the dashboard host has its own firewall (e.g. Synology: Control Panel → Security → Firewall), allow TCP 1883 from the meter there as well. If a check fails, `iptables -S FORWARD` on the router shows whether the rules are in place.
 
 ## Utility Scripts
 

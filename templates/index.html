@@ -15,12 +15,17 @@
 <body>
     <div id="battery-overlay"></div>
 
-    <div class="header">
-        <h1 data-i18n="app.title">Dashboard</h1>
-        <div class="status" id="status" data-i18n="status.connecting">Connecting...</div>
-        <!-- Shown when the inverter reports a type this dashboard can't read (string / micro) -->
-        <div class="inverter-warning" id="inverter-warning" hidden></div>
-    </div>
+    <!-- App bar: name on the left, live status on the right (the settings and
+         fullscreen buttons sit at its right end, see .settings-toggle-btn / .fullscreen-btn) -->
+    <header class="header">
+        <div class="app-bar-title">
+            <span class="app-bar-icon" aria-hidden="true">⚡</span>
+            {% if title %}<h1>{{ title }}</h1>{% else %}<h1 data-i18n="app.title">Home energy</h1>{% endif %}
+        </div>
+        <div class="status status-pill" id="status" data-i18n="status.connecting">Connecting...</div>
+    </header>
+    <!-- Shown when the inverter reports a type this dashboard can't read (string / micro) -->
+    <div class="inverter-warning" id="inverter-warning" hidden></div>
 
     <!-- Fullscreen Button -->
     <button class="fullscreen-btn" id="fullscreen-btn" onclick="toggleFullscreen()" title="Toggle Fullscreen" data-i18n-attr="title:toolbar.fullscreen">
@@ -51,7 +56,11 @@
     <div class="fullscreen-banner-wrapper">
         <!-- Weather Forecast Banner (visible in fullscreen only) -->
         <div class="weather-forecast-banner" id="weather-forecast-banner">
-            <div class="weather-forecast-clock" id="weather-forecast-clock">--:--</div>
+            <!-- Clock with the live status under it (the app bar is hidden in fullscreen) -->
+            <div class="weather-forecast-clock-block">
+                <div class="weather-forecast-clock" id="weather-forecast-clock">--:--</div>
+                <div class="status status-pill" id="fullscreen-status" data-i18n="status.connecting">Connecting...</div>
+            </div>
             <div class="weather-forecast-current">
                 <div class="weather-forecast-icon" id="weather-forecast-icon">--</div>
                 <div>
@@ -698,7 +707,14 @@
             <!-- Step 5: Optional Features -->
             <div class="onboarding-step" id="onb-step-5">
                 <h2 data-i18n="onboarding.step4_title">Optional Features</h2>
-                <p class="subtitle" data-i18n="onboarding.step4_subtitle">Configure generator tracking and Telegram bot.</p>
+                <p class="subtitle" data-i18n="onboarding.step4_subtitle">Name the dashboard, set up generator tracking and the Telegram bot.</p>
+
+                <div class="onboarding-field" style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 16px; margin-bottom: 16px;">
+                    <label for="onb-title" data-i18n="onboarding.dashboard_title">Dashboard name</label>
+                    <input type="text" class="onboarding-input" id="onb-title" maxlength="40" autocomplete="off"
+                           data-i18n-attr="placeholder:app.title">
+                    <div class="settings-hint" data-i18n="onboarding.dashboard_title_hint">Shown at the top of the page and in the browser tab. Leave empty for the default.</div>
+                </div>
 
                 <div style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 16px; margin-bottom: 16px;">
                     <div class="onboarding-toggle-row">

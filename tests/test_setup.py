@@ -132,6 +132,24 @@ class TestInverterPhases:
         assert values["INVERTER_PHASES"] == "3" and extra == []
 
 
+class TestDashboardTitle:
+    def test_validation(self):
+        from setup import validate_config
+        assert validate_config({"DASHBOARD_TITLE": "Дача Іванових"}) == {}
+        assert validate_config({"DASHBOARD_TITLE": ""}) == {}                 # default name
+        for bad in ("x" * 41, "Home #1", 'Say "hi"', "it's", "back\\slash", "two\nlines"):
+            assert "DASHBOARD_TITLE" in validate_config({"DASHBOARD_TITLE": bad}), bad
+
+    def test_written_only_when_set(self, tmp_path):
+        from setup import load_existing_env, write_env
+        path = tmp_path / ".env"
+        base = {"INVERTER_IP": "1.2.3.4", "LOGGER_SERIAL": "1"}
+        write_env({**base, "DASHBOARD_TITLE": "Дача Іванових"}, [], str(path))
+        assert load_existing_env(str(path))[0]["DASHBOARD_TITLE"] == "Дача Іванових"
+        write_env({**base, "DASHBOARD_TITLE": ""}, [], str(path))
+        assert "DASHBOARD_TITLE" not in path.read_text()
+
+
 class TestAirAlertsSettings:
     def test_validation(self):
         from setup import validate_config

@@ -1,6 +1,8 @@
 # Inverter Dashboard
 
-A web dashboard for hybrid solar inverters (Deye / Sunsynk with a Solarman Wi-Fi logger), made for a wall tablet or any browser on your home network.
+A web dashboard for hybrid solar inverters (Deye / Sunsynk with a Solarman Wi-Fi logger).
+
+> **Made for a dashboard screen.** This project is meant to run on a tablet or another always-on screen mounted on the wall, as a home energy display: a fullscreen kiosk view with large banners, low power mode, and an automatic return to the first screen. It works in any browser on your home network, but it is **not** designed as a phone app or as a public web service. Keep it on your local network (the settings PIN is basic protection, not real authentication). Tested on a 7" Samsung tablet (960×600) and on larger tablet and desktop screens.
 
 ![Dashboard](https://raw.githubusercontent.com/cutteroid/inverter-dashboard/main/docs/preview.png)
 

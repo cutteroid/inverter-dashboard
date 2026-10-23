@@ -36,8 +36,8 @@ if [ ! -f .env ]; then
     echo -e "${YELLOW}Deployment Settings${NC}"
     ask DEPLOY_HOST "Remote host (IP or hostname)" ""
     ask DEPLOY_USER "Remote SSH user" ""
-    ask DEPLOY_DIR "Remote install directory" "/home/${DEPLOY_USER}/deye-dashboard"
-    ask DEPLOY_SERVICE_NAME "Systemd service name" "deye-dashboard"
+    ask DEPLOY_DIR "Remote install directory" "/home/${DEPLOY_USER}/inverter-dashboard"
+    ask DEPLOY_SERVICE_NAME "Systemd service name" "inverter-dashboard"
     echo ""
 
     cat >> .env << EOF
@@ -68,8 +68,10 @@ set +a
 # Read deploy vars from environment
 REMOTE_USER="${DEPLOY_USER:-}"
 REMOTE_HOST="${DEPLOY_HOST:-}"
-REMOTE_DIR="${DEPLOY_DIR:-/home/${REMOTE_USER}/deye-dashboard}"
-SERVICE_NAME="${DEPLOY_SERVICE_NAME:-deye-dashboard}"
+REMOTE_DIR="${DEPLOY_DIR:-/home/${REMOTE_USER}/inverter-dashboard}"
+SERVICE_NAME="${DEPLOY_SERVICE_NAME:-inverter-dashboard}"
+# Name of the service before it was renamed: replaced by SERVICE_NAME if still installed
+OLD_SERVICE_NAME="deye-dashboard"
 
 # Validation
 MISSING=()
@@ -138,7 +140,7 @@ done
 # after the configuration is saved from the settings)
 echo -e "${YELLOW}Setting up sudoers for service restart...${NC}"
 ssh ${REMOTE_USER}@${REMOTE_HOST} << ENDSSH
-SUDOERS_FILE="/etc/sudoers.d/deye-dashboard"
+SUDOERS_FILE="/etc/sudoers.d/${SERVICE_NAME}"
 if [ ! -f "\$SUDOERS_FILE" ]; then
     echo "${REMOTE_USER} ALL=(ALL) NOPASSWD: /bin/systemctl restart ${SERVICE_NAME}, /bin/systemctl is-active ${SERVICE_NAME}" | sudo tee "\$SUDOERS_FILE" > /dev/null
     sudo chmod 440 "\$SUDOERS_FILE"
@@ -169,7 +171,7 @@ echo -e "${YELLOW}Setting up systemd service...${NC}"
 ssh ${REMOTE_USER}@${REMOTE_HOST} << ENDSSH
 cat > /tmp/${SERVICE_NAME}.service << EOF
 [Unit]
-Description=Deye Solar Dashboard
+Description=Inverter Dashboard
 After=network.target
 
 [Service]
@@ -188,6 +190,13 @@ EOF
 
 # Install service (requires sudo)
 sudo mv /tmp/${SERVICE_NAME}.service /etc/systemd/system/
+# The service used to be called ${OLD_SERVICE_NAME}: stop and remove that one (it
+# would keep port 8080), together with its sudoers entry
+if [ "${SERVICE_NAME}" != "${OLD_SERVICE_NAME}" ] && [ -f /etc/systemd/system/${OLD_SERVICE_NAME}.service ]; then
+    echo "Replacing the old service ${OLD_SERVICE_NAME} with ${SERVICE_NAME}"
+    sudo systemctl disable --now ${OLD_SERVICE_NAME} || true
+    sudo rm -f /etc/systemd/system/${OLD_SERVICE_NAME}.service /etc/sudoers.d/${OLD_SERVICE_NAME}
+fi
 sudo systemctl daemon-reload
 sudo systemctl enable ${SERVICE_NAME}
 sudo systemctl restart ${SERVICE_NAME}

@@ -32,6 +32,7 @@ MANAGED_KEYS = [
     "TELEGRAM_ENABLED", "TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USERS",
     "TELEGRAM_PUBLIC",
     "AIR_ALERTS_PROVIDER", "AIR_ALERTS_REGION", "ALERTS_IN_UA_TOKEN",
+    "DASHBOARD_TITLE",
 ]
 
 MAX_LOGGER_SERIAL = 0xFFFFFFFF  # Solarman V5 packs the serial as an unsigned 32-bit int
@@ -91,6 +92,14 @@ def _check_date(v):
         return "must be a date in YYYY-MM-DD format"
 
 
+def _check_title(v):
+    """Dashboard name: up to 40 characters, none that would change how the .env
+    line reads (# starts a comment, quotes and backslashes are parsed)."""
+    if len(v) > 40:
+        return "must be at most 40 characters"
+    return "must not contain # \" ' or \\" if re.search(r"[#\"'\\]", v) else None
+
+
 def _check_api_token(v):
     """alerts.in.ua token: one word of URL-safe characters (no spaces, quotes or #,
     which would break the .env line)."""
@@ -129,6 +138,8 @@ _VALIDATORS = {
     # ISO 3166-2 region shown on the alerts map; empty = whole Ukraine
     "AIR_ALERTS_REGION": _check_regex(r"^UA-\d{2}$", "must be a region code like UA-32"),
     "ALERTS_IN_UA_TOKEN": _check_api_token,
+    # Name at the top of the page; empty = the translated default ("Home energy")
+    "DASHBOARD_TITLE": _check_title,
 }
 _REQUIRED_KEYS = ("INVERTER_IP", "LOGGER_SERIAL")
 
@@ -427,6 +438,12 @@ def write_env(values, extra_lines, path=".env"):
         if "OUTAGE_GROUP" in values:
             lines.append(f"OUTAGE_GROUP={values['OUTAGE_GROUP']}")
     lines.append("")
+
+    # Dashboard name (only when set, so the default follows the language)
+    if values.get("DASHBOARD_TITLE"):
+        lines.append("# Dashboard")
+        lines.append(f"DASHBOARD_TITLE={values['DASHBOARD_TITLE']}")
+        lines.append("")
 
     # Generator
     gen_enabled = values.get("INVERTER_HAS_GENERATOR", "false")
