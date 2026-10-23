@@ -4,6 +4,12 @@ A web dashboard for monitoring Deye solar inverters in real-time. Supports both 
 
 Maintained by [Cutteroid](https://github.com/cutteroid). Originally based on [deye-dashboard](https://github.com/ivanursul/deye-dashboard) by Ivan Ursul (MIT license, see [License](#license)).
 
+![Dashboard](docs/preview.png)
+
+The fullscreen kiosk view for a wall tablet:
+
+![Fullscreen kiosk view](docs/preview-fullscreen.png)
+
 ## Changes compared to the original project
 
 What this project adds to the original [ivanursul/deye-dashboard](https://github.com/ivanursul/deye-dashboard):
@@ -55,7 +61,6 @@ What this project adds to the original [ivanursul/deye-dashboard](https://github
   - background services that only start in `main()`;
   - a test suite of over 400 tests.
 
-![Dashboard Preview](docs/preview.png)
 
 ## How It Works (for non-technical users)
 
