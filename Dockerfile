@@ -41,14 +41,17 @@ COPY setup.py .
 COPY discover_inverter.py .
 # MIT: the license and its copyright notices ship with every copy
 COPY LICENSE .
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-# Create a non-root user for security.
+# The dashboard runs as this non-root user (uid 1000). The container starts as
+# root only for docker-entrypoint.sh, which makes the mounted data folder
+# writable for it and then switches to it.
 # .env lives in the mounted data volume so config saved from the UI persists.
 RUN useradd -m -u 1000 appuser && \
     mkdir -p /app/data && \
     ln -s /app/data/.env /app/.env && \
-    chown -R appuser:appuser /app
-USER appuser
+    chown -R appuser:appuser /app && \
+    chmod 755 /usr/local/bin/docker-entrypoint.sh
 
 # Expose port (Flask default + dashboard)
 EXPOSE 8080
@@ -57,5 +60,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8080/api/data', timeout=5)"
 
-# Run the Flask application
+# Run the dashboard (as appuser, see docker-entrypoint.sh)
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["python", "app.py"]

@@ -78,10 +78,8 @@ Unpack it first, then import \`images.tar\` from inside and start a **Project**
 
 1. File Station: upload $NAME.tar.gz to the \`docker\` shared folder, right-click → Extract → Extract here.
    You get the folder \`$NAME\`.
-2. Right-click the \`$NAME/data\` folder → Properties → Permission → Create:
-   user "Everyone", Read & Write, apply to this folder, sub-folders and files.
-   (The dashboard runs as user 1000 inside the container and must be able to write there.)
-   Optional: put your existing config at \`data/.env\` (see .env.example).
+2. Optional: put your existing config at \`$NAME/data/.env\` (see .env.example).
+   (No permissions to set: the container makes data/ writable for the dashboard itself.)
 3. Container Manager → Image → Import → Add from file → \`$NAME/images.tar\`.
    Two images appear: extended-dashboard and eclipse-mosquitto.
 4. Container Manager → Project → Create: any name (e.g. extended-dashboard),
@@ -96,7 +94,6 @@ tar xzf $NAME.tar.gz
 cd $NAME
 sudo docker load -i images.tar
 # optional: put your existing config at data/.env (see .env.example)
-sudo chown -R 1000:1000 data          # the dashboard runs as user 1000
 sudo docker compose up -d             # older DSM: sudo docker-compose up -d
 \`\`\`
 
@@ -105,7 +102,6 @@ sudo docker compose up -d             # older DSM: sudo docker-compose up -d
 \`\`\`bash
 tar xzf $NAME.tar.gz && cd $NAME
 docker load -i images.tar
-sudo chown -R 1000:1000 data
 docker compose up -d
 \`\`\`
 

@@ -201,10 +201,6 @@ You can also run the dashboard using Docker, which is the recommended approach f
 git clone https://github.com/cutteroid/inverter-dashboard.git
 cd inverter-dashboard
 
-# Linux: data/ must belong to the container's user (1000), or the dashboard
-# can't save its settings (a folder Docker creates itself belongs to root)
-mkdir -p data && sudo chown 1000:1000 data
-
 # Build and start the dashboard (and the MQTT broker for the smart meter)
 docker compose up -d
 
@@ -235,6 +231,26 @@ docker run -d \
 ```
 
 Don't pass the settings with `--env-file` / `-e`: environment variables take precedence over `data/.env`, so changes saved from the dashboard's settings would be ignored.
+
+### Install from Docker Hub (e.g. Synology Container Manager)
+
+Each release is published as an image for Intel/AMD and ARM machines: [`cutteroid/inverter-dashboard`](https://hub.docker.com/r/cutteroid/inverter-dashboard) (tags: the version, e.g. `2.4.0`, and `latest`). No source code or build needed.
+
+**Synology (DSM 7.2, Container Manager):**
+
+1. **Registry:** search `cutteroid/inverter-dashboard` → **Download** → tag `latest`.
+2. **File Station:** create a folder for the dashboard's data, e.g. `docker/inverter-dashboard/data`.
+3. **Container → Create:** pick the image, then:
+   - enable auto-restart;
+   - **Port settings:** local port `8080` → container port `8080`;
+   - **Volume settings:** add the folder from step 2, mounted at `/app/data`.
+4. Open `http://<NAS-IP>:8080`. The setup wizard starts and saves the configuration in that folder.
+
+The data folder needs no special permissions: at start the container makes it writable for the dashboard's user (uid 1000), changing only what that user can't write yet, then runs the dashboard as that user. **Updates:** Registry → download `latest` again, then stop and delete the container and create it again with the same settings. The data folder keeps the configuration and statistics.
+
+The smart meter's MQTT broker isn't part of this image. For the smart meter, install with Docker Compose from the source as above (or with the bundle below).
+
+With plain Docker: `docker run -d --name inverter-dashboard -p 8080:8080 -v /path/to/data:/app/data --restart unless-stopped cutteroid/inverter-dashboard:latest`.
 
 ### Running on Another Machine Without Building (e.g. Synology NAS)
 

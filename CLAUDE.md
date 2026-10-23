@@ -33,6 +33,9 @@ tools/export_images.sh [arm64|amd64]
 # Update a Docker host (e.g. the Synology NAS): send build files over SSH, rebuild there
 tools/deploy_nas.sh [--setup]
 
+# Docker Hub image (cutteroid/inverter-dashboard, amd64 + arm64): .github/workflows/docker-publish.yml
+# builds and pushes it on every published GitHub release (or by hand: Actions -> Run workflow)
+
 # Test inverter connection
 python test_connection.py
 
@@ -103,6 +106,8 @@ Transient failures never replace good data: `InverterPoller` keeps the last good
 All pollers use thread locks for safe cache access. The inverter connection (the driver's `lock`) is shared between `InverterPoller` and auto-detect (one logger connection per poll: its few TCP slots are the scarce resource). The Telegram bot reads `InverterPoller.data` (no direct inverter reads).
 
 Data files (stats, logs, caches, bot state) default to `storage.data_path(name)` = `data/<name>` when `data/` exists (the Docker volume, so they survive deploys), else next to the app; tests redirect them all to a temp folder (autouse fixture in `tests/conftest.py`). They go through `storage.py`: `atomic_write_json()` (temp file + fsync + rename, safe across power cuts) and `load_json()` (missing/corrupt file → default; corrupt files are moved to `*.corrupt`). Read-modify-write updates in `app.py` hold `_data_lock`.
+
+The container starts as root only for `docker-entrypoint.sh`: it chowns to uid 1000 whatever in `data/` that user can't write (never `data/mosquitto/`), then runs the app as uid 1000 via `setpriv`. Keep the app itself non-root.
 
 Config saved from the UI is validated by `setup.validate_config()` (types, ranges, no line breaks, no unknown keys) before `.env` is written.
 

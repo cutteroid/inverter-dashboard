@@ -42,6 +42,7 @@ deploy.sh
 deploy_local.sh
 download_logs.sh
 *.sh
+!docker-entrypoint.sh
 
 # Environment
 .env

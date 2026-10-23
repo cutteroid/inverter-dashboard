@@ -21,10 +21,6 @@ Without `data/.env` the dashboard starts in setup mode and opens the setup wizar
 git clone https://github.com/cutteroid/inverter-dashboard.git
 cd inverter-dashboard
 
-# Linux: create data/ for the container's user first (a folder Docker creates
-# itself would belong to root, and the dashboard couldn't save its settings)
-mkdir -p data && sudo chown 1000:1000 data
-
 docker compose up -d --build
 ```
 
@@ -94,13 +90,7 @@ Everything the dashboard stores lives in `data/`, so it survives rebuilds, updat
 - `bot_state.json`, `battery_reports/`: Telegram bot state
 - `smart_meter_daily.json`, `mosquitto/`: smart meter counter and broker files
 
-The dashboard runs as user `1000` inside the container, so it needs write access to `data/`. On Linux, give the folder to that user, and do it again if files in it were created as another user:
-
-```bash
-sudo chown -R 1000:1000 data
-```
-
-(Docker Desktop on macOS / Windows maps permissions itself; there this isn't needed.)
+The dashboard runs as user `1000` inside the container, so it needs write access to `data/`. The container takes care of that: it starts as root only for `docker-entrypoint.sh`, which gives user 1000 whatever in `data/` it can't write yet (a folder created by hand, or by Docker itself, belongs to another user), and then runs the dashboard as user 1000. Files user 1000 can already write keep their owner, and `data/mosquitto/` (the broker's) is never touched. Started with `docker run --user ...`, the container skips this step.
 
 ### Ports and volumes
 
@@ -153,7 +143,7 @@ docker buildx build --platform linux/amd64,linux/arm64 -t myregistry/deye-dashbo
 docker compose logs deye-dashboard
 ```
 
-- If the wizard keeps appearing, the dashboard can't read a valid `data/.env`. Check that the file exists and that `data/` is writable by user `1000` (see above).
+- If the wizard keeps appearing, the dashboard can't read a valid `data/.env`. Check that the file exists; the container log says if it had to fix the folder's permissions (see above).
 - Settings you change in the dashboard don't stick: check that nothing passes them as environment variables (`--env-file`, `-e`, `environment:` / `env_file:` for the dashboard service).
 
 ### Cannot connect to the inverter
