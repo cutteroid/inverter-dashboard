@@ -9,7 +9,7 @@ Maintained by [Cutteroid](https://github.com/cutteroid). Originally based on [de
 What this project adds to the original [ivanursul/deye-dashboard](https://github.com/ivanursul/deye-dashboard):
 
 **New cards and features**
-- **Air raid alerts map:** Ukraine with oblasts and raions, live from [alerts.in.ua](https://alerts.in.ua/) (with a free API token) or [NEPTUN](https://neptun.in.ua/) (no key needed), refreshed every 30 s,, on a card and on the fullscreen first page. You can show the whole country or zoom to one region, with neighbouring regions dimmed around it (Settings → step 4).
+- **Air raid alerts map:** Ukraine with oblasts and raions, live from [alerts.in.ua](https://alerts.in.ua/) (with a free API token) or [NEPTUN](https://neptun.in.ua/) (no key needed), refreshed every 30 s, on a card and on the fullscreen first page. You can show the whole country or zoom to one region, with neighbouring regions dimmed around it (Settings → step 4).
 - **Planned outages:** today's and tomorrow's outage windows on a timeline, plus a countdown in the grid banner. Adds a DTEK provider (Kyiv oblast, Kyiv, Dnipro, Odesa). A failed schedule fetch is no longer reported as "No outages today".
 - **Bakler smart meter** (optional): live power, voltage and current per phase over MQTT, with a Mosquitto broker in `docker-compose.yml`. Phases cut by the meter or without supply are highlighted. The relay state is shown read-only. A demo mode is included.
 - **Battery estimates:**
