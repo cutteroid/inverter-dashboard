@@ -8,7 +8,8 @@
     --black: #000000;
     --slate-100: #f1f5f9;
     --slate-200: #e2e8f0;
-    --slate-300: #cbd5e1;
+    --slate-300-rgb: 203, 213, 225;
+    --slate-300: rgb(var(--slate-300-rgb));
     --slate-400-rgb: 148, 163, 184;
     --slate-400: rgb(var(--slate-400-rgb));
     --slate-500-rgb: 100, 116, 139;
@@ -44,9 +45,11 @@
     --blue-400-rgb: 96, 165, 250;
     --blue-400: rgb(var(--blue-400-rgb));
     --blue-500: #3b82f6;
-    --indigo-300: #a5b4fc;
+    --indigo-300-rgb: 165, 180, 252;
+    --indigo-300: rgb(var(--indigo-300-rgb));
     --indigo-500-rgb: 99, 102, 241;
-    --violet-300: #c4b5fd;
+    --violet-300-rgb: 196, 181, 253;
+    --violet-300: rgb(var(--violet-300-rgb));
     --violet-400: #a78bfa;
 
     /* Page, app bar and panels: a flat deep navy page, cards a blue tint over it */
@@ -82,6 +85,7 @@
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-variant-numeric: tabular-nums;   /* equal-width digits: live values don't jiggle */
     background: var(--bg);
     min-height: 100vh;
     color: var(--text);
@@ -132,8 +136,17 @@ html.low-power .header {
 }
 
 .app-bar-icon {
-    font-size: 1.3rem;
-    line-height: 1;
+    display: inline-flex;
+    color: var(--amber-400);
+}
+
+.app-bar-icon svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linejoin: round;
 }
 
 .header h1 {
@@ -606,7 +619,6 @@ body.cards-dragging * {
 }
 
 .card-header .icon {
-    font-size: 1.5rem;
     cursor: grab;
 }
 
@@ -615,10 +627,77 @@ body.cards-dragging * {
 }
 
 .card-header h2 {
-    font-size: 1.1rem;
-    font-weight: 500;
+    font-size: 1.05rem;
+    font-weight: 600;
     color: var(--text-muted);
 }
+
+/* Icon chip: a stroke icon (inline SVG drawn in currentColor) on a tint of the
+   same colour, which comes from a chip-* class. Card headers use it, and the
+   titles of the fullscreen planned-outages and alerts blocks. */
+.icon-chip {
+    --chip-rgb: var(--slate-300-rgb);
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    color: rgb(var(--chip-rgb));
+    background: rgba(var(--chip-rgb), 0.14);
+}
+
+.icon-chip svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.icon-chip.small {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+}
+
+.icon-chip.small svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Status banners: sized by the font-size each layout already sets on the icon */
+.icon-chip.large {
+    width: 1.2em;
+    height: 1.2em;
+    border-radius: 0.3em;
+}
+
+.icon-chip.large svg {
+    width: 0.62em;
+    height: 0.62em;
+}
+
+.chip-amber { --chip-rgb: var(--amber-400-rgb); }
+.chip-mint { --chip-rgb: var(--mint-400-rgb); }
+.chip-blue { --chip-rgb: var(--blue-400-rgb); }
+.chip-orange { --chip-rgb: var(--orange-400-rgb); }
+.chip-red { --chip-rgb: var(--red-400-rgb); }
+.chip-indigo { --chip-rgb: var(--indigo-300-rgb); }
+.chip-violet { --chip-rgb: var(--violet-300-rgb); }
+.chip-slate { --chip-rgb: var(--slate-300-rgb); }
+
+/* Banner icons take the colour of the banner's state, like its value */
+.grid-status-banner.online .grid-status-icon,
+.battery-status-banner.battery-high .battery-banner-icon { --chip-rgb: var(--mint-400-rgb); }
+.grid-status-banner.offline .grid-status-icon,
+.battery-status-banner.battery-low .battery-banner-icon { --chip-rgb: var(--red-500-rgb); }
+.grid-status-banner.offline.partial .grid-status-icon,
+.battery-status-banner.battery-medium .battery-banner-icon { --chip-rgb: var(--amber-400-rgb); }
+.generator-status-banner.generator-running .generator-banner-icon { --chip-rgb: var(--amber-500-rgb); }
 
 .card-header .btn {
     margin-left: auto;
@@ -1842,11 +1921,14 @@ body.fullscreen-mode .planned-outages-banner {
 
 body.fullscreen-mode .planned-outages-banner-header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     margin-bottom: 14px;
 }
 
 body.fullscreen-mode .planned-outages-banner-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
     font-size: 1.1rem;
     color: var(--text-muted);
     white-space: nowrap;
@@ -2153,6 +2235,9 @@ body.fullscreen-mode .alerts-banner .alerts-map-zoomed svg {
 }
 
 .alerts-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
     font-size: 1.1rem;
     color: var(--text-muted);
 }
