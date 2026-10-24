@@ -578,9 +578,34 @@ body.fullscreen-mode .battery-runtime-value {
 .dashboard {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-auto-flow: row dense;   /* wide cards: smaller ones fill the gaps they leave */
     gap: 20px;
     max-width: 1400px;
     margin: 0 auto;
+}
+
+/* Card layout from Settings → Cards (applyCardLayout): switched off, or wide.
+   Wide only where two columns fit (2 × 300px + gap + the widest page padding),
+   else a span of 2 would add a column. */
+.dashboard > .card-user-hidden {
+    display: none !important;
+}
+
+@media (min-width: 720px) {
+    .dashboard > .card-wide {
+        grid-column: span 2;
+    }
+
+    /* Rows side by side, a taller sparkline */
+    .card-wide .stats-row:not(.stats-row-3) {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        column-gap: 28px;
+    }
+
+    .card-wide .sparkline svg {
+        height: 72px;
+    }
 }
 
 /* "Right now" strip, first in the card grid and across all of it (renderPowerFlow):
@@ -1721,10 +1746,6 @@ body.cards-dragging * {
 
     .battery-bar {
         height: 26px;
-    }
-
-    .stats-row {
-        gap: 12px;
     }
 
 }
@@ -2962,6 +2983,58 @@ button.onboarding-toggle {
 
 .settings-section .settings-hint + .onboarding-toggle-row {
     margin-top: 14px;
+}
+
+/* Settings → Cards: name, wide button, on/off switch per card */
+.card-settings {
+    margin-top: 8px;
+}
+
+.card-setting {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+}
+
+.card-setting-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.card-wide-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: none;
+    color: var(--text-dim);
+    cursor: pointer;
+}
+
+.card-wide-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.card-wide-btn.on {
+    color: var(--indigo-300);
+    background: rgba(var(--indigo-500-rgb), 0.2);
+    border-color: rgba(var(--indigo-500-rgb), 0.5);
 }
 
 /* The one note on which settings stay on this device (shown once) */

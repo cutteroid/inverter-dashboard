@@ -285,6 +285,7 @@ function toggleSettingsPanel() {
         closeSettingsPanel();
     } else {
         lockServerSettings();
+        renderCardSettings();
         panel.classList.add('open');
     }
 }
@@ -2737,9 +2738,95 @@ function initCardDrag(container) {
     });
 }
 
+// ===== CARD LAYOUT =====
+// Per device: the cards the viewer switched off, and the cards shown wide (two
+// columns where the screen has room, see .card-wide). Set in Settings → Cards.
+// A switched-off card stays hidden on top of the dashboard's own rules (no
+// generator, no schedule...), which hide cards with an inline display: none
+// or a class.
+var CARD_HIDDEN_KEY = 'dashboard-cards-hidden';
+var CARD_WIDE_KEY = 'dashboard-cards-wide';
+var WIDE_ICON = '<svg viewBox="0 0 24 24"><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/></svg>';
+
+function loadCardList(key) {
+    var list = null;
+    try { list = JSON.parse(localStorage.getItem(key)); } catch (e) {}
+    return Array.isArray(list) ? list.filter(function(id) { return typeof id === 'string'; }) : [];
+}
+
+var hiddenCards = loadCardList(CARD_HIDDEN_KEY);
+var wideCards = loadCardList(CARD_WIDE_KEY);
+
+// The "Right now" strip and the cards, in page order
+function layoutItems() {
+    var container = document.querySelector('.dashboard');
+    return container ? Array.prototype.filter.call(container.children, function(el) {
+        return el.getAttribute('data-id');
+    }) : [];
+}
+
+function applyCardLayout() {
+    layoutItems().forEach(function(el) {
+        var id = el.getAttribute('data-id');
+        el.classList.toggle('card-user-hidden', hiddenCards.indexOf(id) !== -1);
+        el.classList.toggle('card-wide', el.classList.contains('card') && wideCards.indexOf(id) !== -1);
+    });
+}
+
+function toggleCardSetting(list, key, id) {
+    var i = list.indexOf(id);
+    if (i === -1) list.push(id); else list.splice(i, 1);
+    try { localStorage.setItem(key, JSON.stringify(list)); } catch (e) {}
+    applyCardLayout();
+    renderCardSettings();
+}
+
+function cardTitle(el) {
+    var keyEl = el.matches('.flow-strip') ? el.querySelector('.flow-title')
+        : el.querySelector('.card-header h2[data-i18n], .card-header h2 [data-i18n]');
+    return keyEl ? t(keyEl.getAttribute('data-i18n')) : el.getAttribute('data-id');
+}
+
+// One row per card the dashboard shows now (or the viewer switched off):
+// name, wide button (not for the strip, it's always full width), on/off switch
+function renderCardSettings() {
+    var box = document.getElementById('card-settings');
+    if (!box) return;
+    box.innerHTML = layoutItems().filter(function(el) {
+        return hiddenCards.indexOf(el.getAttribute('data-id')) !== -1 || getComputedStyle(el).display !== 'none';
+    }).map(function(el) {
+        var id = el.getAttribute('data-id');
+        var name = cardTitle(el);
+        var shown = hiddenCards.indexOf(id) === -1;
+        var wide = wideCards.indexOf(id) !== -1;
+        var wideBtn = el.classList.contains('card')
+            ? '<button type="button" class="card-wide-btn' + (wide ? ' on' : '') + '" data-card-wide="' + escapeHtml(id) + '"' +
+              ' aria-pressed="' + wide + '" aria-label="' + escapeHtml(t('settings.card_wide', { name: name })) + '"' +
+              ' title="' + escapeHtml(t('settings.card_wide', { name: name })) + '">' + WIDE_ICON + '</button>'
+            : '';
+        return '<div class="card-setting">' +
+            '<span class="card-setting-name">' + escapeHtml(name) + '</span>' + wideBtn +
+            '<button type="button" class="onboarding-toggle' + (shown ? ' on' : '') + '" role="switch" data-card-show="' + escapeHtml(id) + '"' +
+            ' aria-checked="' + shown + '" aria-label="' + escapeHtml(t('settings.card_show', { name: name })) + '">' +
+            '<span class="toggle-knob"></span></button></div>';
+    }).join('');
+}
+
+(function() {
+    var box = document.getElementById('card-settings');
+    if (!box) return;
+    box.addEventListener('click', function(e) {
+        var btn = e.target.closest('button');
+        if (!btn) return;
+        if (btn.hasAttribute('data-card-show')) toggleCardSetting(hiddenCards, CARD_HIDDEN_KEY, btn.getAttribute('data-card-show'));
+        if (btn.hasAttribute('data-card-wide')) toggleCardSetting(wideCards, CARD_WIDE_KEY, btn.getAttribute('data-card-wide'));
+    });
+})();
+
 (function() {
     var container = document.querySelector('.dashboard');
     if (!container) return;
     applyCardOrder(container);
+    applyCardLayout();
     initCardDrag(container);
 })();

@@ -194,7 +194,7 @@
         <!-- Right now: where the power comes from and where it goes, a bar and a list
              each, from the current readings (renderPowerFlow). Not a .card: card
              ordering leaves it first -->
-        <section class="flow-strip" id="flow-strip" hidden>
+        <section class="flow-strip" id="flow-strip" data-id="flow-strip" hidden>
             <span class="flow-title" data-i18n="flow.title">Right now</span>
             <div class="flow-rows" id="flow-rows"></div>
         </section>
@@ -845,7 +845,14 @@
                 </button>
             </div>
             <div class="settings-hint" data-i18n="settings.return_to_top_hint" data-i18n-params='{"seconds": 30}'>In fullscreen, scrolls back up 30 s after the last touch.</div>
-            <div class="settings-hint settings-local-note" data-i18n="settings.local_hint">Language and display settings are saved on this device.</div>
+        </div>
+
+        <div class="settings-section">
+            <label data-i18n="settings.cards">Cards</label>
+            <div class="settings-hint" data-i18n="settings.cards_hint">Switch off the cards you don't need. The arrows make a card twice as wide where the screen has room.</div>
+            <!-- One row per card: filled by renderCardSettings() when the panel opens -->
+            <div class="card-settings" id="card-settings"></div>
+            <div class="settings-hint settings-local-note" data-i18n="settings.local_hint">Language, display and card settings are saved on this device.</div>
         </div>
 
         <!-- Server-side settings: change the server, so they need the settings PIN.

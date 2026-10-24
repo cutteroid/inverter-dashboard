@@ -351,7 +351,7 @@
     "low_power_hint": "Turns off animations and blur effects.",
     "return_to_top": "Back to the first screen",
     "return_to_top_hint": "In fullscreen, scrolls back up {seconds} s after the last touch.",
-    "local_hint": "Language and display settings are saved on this device.",
+    "local_hint": "Language, display and card settings are saved on this device.",
     "configuration": "Configuration",
     "edit_configuration": "Edit Configuration",
     "factory_reset": "Factory Reset",
@@ -361,7 +361,11 @@
     "restarting": "Restarting…",
     "donate": "Support the project",
     "donate_this": "this project",
-    "donate_original": "original project"
+    "donate_original": "original project",
+    "cards": "Cards",
+    "cards_hint": "Switch off the cards you don't need. The arrows make a card twice as wide where the screen has room.",
+    "card_show": "Show {name}",
+    "card_wide": "Wide: {name}"
   },
   "onboarding": {
     "step1_title": "Inverter Connection",
