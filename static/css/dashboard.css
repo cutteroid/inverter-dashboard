@@ -49,23 +49,23 @@
     --violet-300: #c4b5fd;
     --violet-400: #a78bfa;
 
-    /* Page, app bar and panels */
-    --bg-from: #1a1a2e;
-    --bg-to: #16213e;
-    --app-bar-rgb: 17, 22, 43;
-    --app-bar-solid-rgb: 20, 26, 48;
-    --dialog-rgb: 30, 30, 50;
-    --card-dragging: #2a3149;
+    /* Page, app bar and panels: a flat deep navy page, cards a blue tint over it */
+    --bg: #0e1322;
+    --app-bar-rgb: 18, 26, 44;
+    --app-bar-solid-rgb: 18, 26, 44;
+    --dialog-rgb: 23, 32, 54;
+    --card-dragging: #243151;
     --alarm-rgb: 120, 15, 15;
 
     /* Tints over the page: --fg-rgb lightens (white on a dark theme), --shadow-rgb darkens */
     --fg-rgb: 255, 255, 255;
     --shadow-rgb: 0, 0, 0;
-    --surface: rgba(var(--fg-rgb), 0.05);
-    --border: rgba(var(--fg-rgb), 0.1);
+    --surface-rgb: 104, 149, 234;   /* see-through, so the low-battery red glow still shows */
+    --surface: rgba(var(--surface-rgb), 0.1);
+    --border: rgba(var(--fg-rgb), 0.08);
 
     /* Text, from strongest to faintest */
-    --text: var(--white);
+    --text: #e8edf6;
     --text-bright: var(--slate-100);
     --text-soft: var(--slate-200);
     --text-subtle: var(--slate-300);
@@ -82,7 +82,7 @@
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: linear-gradient(135deg, var(--bg-from) 0%, var(--bg-to) 100%);
+    background: var(--bg);
     min-height: 100vh;
     color: var(--text);
     padding: 20px;
