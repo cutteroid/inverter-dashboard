@@ -12,7 +12,8 @@
     "close": "Close",
     "clear": "Clear",
     "loading": "Loading...",
-    "error": "Error: {message}"
+    "error": "Error: {message}",
+    "power_now": "Power now"
   },
   "units": {
     "w": "W",
@@ -142,7 +143,6 @@
     "off": "OFF",
     "standby": "Standby",
     "runtime_today": "Runtime: {time} today",
-    "power": "Generator Power",
     "today_runtime": "Today Runtime",
     "monthly_runtime": "Monthly Runtime",
     "fuel_today": "Fuel Today (L)",
@@ -249,11 +249,11 @@
     "peak_label": "Peak",
     "total": "Total",
     "lowest": "Lowest",
-    "highest": "Highest"
+    "highest": "Highest",
+    "since": "Since {time}"
   },
   "solar": {
     "title": "Solar Production",
-    "total_power": "Total PV Power",
     "pv1": "PV1 (W)",
     "pv2": "PV2 (W)",
     "today_generation": "Today's Generation (kWh)"
@@ -296,14 +296,14 @@
   },
   "grid": {
     "title": "Grid",
-    "power": "Grid Power",
     "voltage": "Voltage (V)",
-    "import": "Import (kWh)",
-    "export": "Export (kWh)"
+    "import": "Today's Import (kWh)",
+    "export": "Today's Export (kWh)",
+    "import_now": "Import now",
+    "export_now": "Export now"
   },
   "consumption": {
     "title": "Consumption",
-    "current_load": "Current Load",
     "today_usage": "Today's Usage (kWh)",
     "per_phase": "Load per Phase",
     "l1_voltage": "L1 Voltage",
@@ -312,7 +312,6 @@
   },
   "meter": {
     "title": "Bakler",
-    "power": "Current power",
     "voltage": "Voltage (V)",
     "current": "Current (A)",
     "phase": "Phase",

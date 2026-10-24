@@ -911,6 +911,9 @@ function updateDashboard() {
             const gridPowerEl = document.getElementById('grid-power');
             gridPowerEl.innerHTML = Math.abs(data.grid_power) + '<span class="unit">' + t('units.w') + '</span>';
             gridPowerEl.className = 'metric-value ' + (data.grid_power > 0 ? 'negative' : data.grid_power < 0 ? 'positive' : 'neutral');
+            // The number has no sign: the label says which way the power flows
+            setI18nText(document.getElementById('grid-power-label'),
+                data.grid_power > 0 ? 'grid.import_now' : data.grid_power < 0 ? 'grid.export_now' : 'common.power_now');
             document.getElementById('grid-voltage').textContent = fmt(data.grid_voltage, 1);
             // 3-phase: one value per phase instead of L1 only
             var gridPhases = data.grid_voltage_l2 != null;
@@ -1057,8 +1060,9 @@ setInterval(loadPhaseStats, 30000);
 
 // ===== SPARKLINES =====
 // Battery charge, solar and load over the last 24 hours: 5-minute averages
-// from /api/history (history.py), drawn on a fixed 24-hour axis ending at the
-// server's "now". A gap in the data (dashboard off, no reading) breaks the line.
+// from /api/history (history.py), drawn from the first reading to the latest
+// (with less than a day of history the caption says since when). A gap in the
+// data (dashboard off, no reading) breaks the line.
 var HISTORY_POLL_MS = 5 * 60 * 1000;
 var SPARK_W = 300, SPARK_H = 48;   // the SVG's viewBox
 var historyData = null;
@@ -1080,13 +1084,24 @@ function renderSparklines() {
     });
 }
 
-// The series' readings as points (bucket middle, value); buckets without one are skipped
+// The series' readings as points (bucket middle, but not past "now" for the
+// open bucket; value); buckets without one are skipped
 function historyPoints(h, name) {
     var points = [];
     ((h && h[name]) || []).forEach(function(v, i) {
-        if (typeof v === 'number') points.push({ t: h.t[i] + h.bucket_seconds / 2, v: v });
+        if (typeof v === 'number') points.push({ t: Math.min(h.t[i] + h.bucket_seconds / 2, h.now), v: v });
     });
     return points;
+}
+
+// The time axis: first to latest point. Less than a (nearly) full day of
+// history: the caption el says since when, else "Last 24 hours".
+function historyRange(points, captionEl) {
+    var start = points[0].t, end = points[points.length - 1].t;
+    var span = Math.max(1, end - start);
+    if (span < 23 * 3600) setI18nText(captionEl, 'history.since', { time: clockText(start) });
+    else setI18nText(captionEl, 'history.last_24h');
+    return { start: start, end: end, span: span };
 }
 
 // Line and area paths, one run per stretch of consecutive buckets (a missing
@@ -1119,12 +1134,12 @@ function renderSparkline(el, h) {
     el.hidden = points.length < 2;
     if (el.hidden) return;
 
-    var span = 24 * 3600, start = h.now - span;
+    var range = historyRange(points, el.querySelector('.spark-period'));
     var vs = points.map(function(p) { return p.v; });
     var max = name === 'soc' ? 100 : Math.max(100, Math.max.apply(null, vs));
     var top = 3, bottom = SPARK_H - 1;
     var paths = historyPaths(points, h.bucket_seconds,
-        function(p) { return Math.max(0, p.t - start) / span * SPARK_W; },
+        function(p) { return (p.t - range.start) / range.span * SPARK_W; },
         function(p) { return bottom - Math.max(0, p.v) / max * (bottom - top); },
         SPARK_H);
     el.querySelector('.spark-line').setAttribute('d', paths.line);
@@ -1144,6 +1159,7 @@ var DETAILS_W = 600, DETAILS_H = 220;
 var DETAILS_LEFT = 52, DETAILS_RIGHT = 10, DETAILS_TOP = 12, DETAILS_BOTTOM = 26;
 var detailsSpark = null;   // the sparkline whose details are open
 var detailsAt = null;      // time of the touched point (null: the latest)
+var detailsRange = null;   // the chart's time axis (historyRange)
 
 function openHistoryDetails(sparkEl) {
     detailsSpark = sparkEl;
@@ -1199,11 +1215,11 @@ function renderHistoryDetails() {
         return;
     }
 
-    var span = 24 * 3600, start = h.now - span;
+    var range = detailsRange = historyRange(points, document.getElementById('details-period'));
     var vs = points.map(function(p) { return p.v; });
     var max = name === 'soc' ? 100 : niceCeil(Math.max(100, Math.max.apply(null, vs)));
     var left = DETAILS_LEFT, right = DETAILS_W - DETAILS_RIGHT, top = DETAILS_TOP, bottom = DETAILS_H - DETAILS_BOTTOM;
-    function x(p) { return left + Math.max(0, p.t - start) / span * (right - left); }
+    function x(p) { return left + (p.t - range.start) / range.span * (right - left); }
     function y(p) { return bottom - Math.max(0, p.v) / max * (bottom - top); }
 
     var svg = '';
@@ -1214,9 +1230,11 @@ function renderHistoryDetails() {
             '<text class="details-label" x="' + (left - 8) + '" y="' + gy + '" text-anchor="end" dominant-baseline="middle">' +
             escapeHtml(historyValueText(name, f * max)) + '</text>';
     });
-    // Time axis: every 6 hours on the clock (00, 06, 12, 18)
-    for (var tick = Math.ceil(start / 3600) * 3600; tick <= h.now; tick += 3600) {
-        if (new Date(tick * 1000).getHours() % 6) continue;
+    // Time axis on whole hours of the clock: every 6 (00, 06, 12, 18), or every
+    // 3 / every hour for a shorter history
+    var tickHours = range.span <= 4 * 3600 ? 1 : range.span <= 12 * 3600 ? 3 : 6;
+    for (var tick = Math.ceil(range.start / 3600) * 3600; tick <= range.end; tick += 3600) {
+        if (new Date(tick * 1000).getHours() % tickHours) continue;
         var tx = x({ t: tick }).toFixed(1);
         svg += '<line class="details-grid details-grid-time" x1="' + tx + '" x2="' + tx + '" y1="' + top + '" y2="' + bottom + '"/>' +
             '<text class="details-label" x="' + tx + '" y="' + (DETAILS_H - 6) + '" text-anchor="middle">' + clockText(tick) + '</text>';
@@ -1272,11 +1290,11 @@ function renderHistoryDetails() {
     });
     // Touch or hover the chart: the value at that time
     function touched(e) {
-        if (!detailsSpark || !historyData) return;
+        if (!detailsSpark || !detailsRange) return;
         var rect = chart.getBoundingClientRect();
         var vx = (e.clientX - rect.left) / rect.width * DETAILS_W;
         var f = (vx - DETAILS_LEFT) / (DETAILS_W - DETAILS_RIGHT - DETAILS_LEFT);
-        detailsAt = historyData.now - 24 * 3600 + Math.min(1, Math.max(0, f)) * 24 * 3600;
+        detailsAt = detailsRange.start + Math.min(1, Math.max(0, f)) * detailsRange.span;
         renderHistoryDetails();
     }
     chart.addEventListener('pointerdown', touched);

@@ -206,13 +206,13 @@
                 <h2 data-i18n="solar.title">Solar Production</h2>
             </div>
             <div class="metric">
-                <div class="metric-label" data-i18n="solar.total_power">Total PV Power</div>
+                <div class="metric-label" data-i18n="common.power_now">Power now</div>
                 <div class="metric-value positive" id="pv-total">--<span class="unit" data-i18n="units.w">W</span></div>
             </div>
             <!-- Last 24 hours (/api/history, renderSparkline) -->
             <div class="sparkline spark-solar" data-series="pv" role="button" tabindex="0" data-i18n-attr="aria-label:history.open" hidden>
                 <svg viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area"/><path class="spark-line"/></svg>
-                <div class="spark-caption"><span data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
+                <div class="spark-caption"><span class="spark-period" data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
             </div>
             <div class="stats-row">
                 <div class="stat">
@@ -245,7 +245,7 @@
             <!-- Last 24 hours (/api/history, renderSparkline) -->
             <div class="sparkline spark-battery" data-series="soc" role="button" tabindex="0" data-i18n-attr="aria-label:history.open" hidden>
                 <svg viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area"/><path class="spark-line"/></svg>
-                <div class="spark-caption"><span data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
+                <div class="spark-caption"><span class="spark-period" data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
             </div>
             <div class="stats-row">
                 <div class="stat">
@@ -276,7 +276,7 @@
                 <h2 data-i18n="grid.title">Grid</h2>
             </div>
             <div class="metric">
-                <div class="metric-label" data-i18n="grid.power">Grid Power</div>
+                <div class="metric-label" id="grid-power-label" data-i18n="common.power_now">Power now</div>
                 <div class="metric-value" id="grid-power">--<span class="unit" data-i18n="units.w">W</span></div>
             </div>
             <div class="stat" id="grid-voltage-single">
@@ -301,11 +301,11 @@
             <div class="stats-row">
                 <div class="stat">
                     <div class="value" id="daily-import">--</div>
-                    <div class="label" data-i18n="grid.import">Import (kWh)</div>
+                    <div class="label" data-i18n="grid.import">Today's Import (kWh)</div>
                 </div>
                 <div class="stat">
                     <div class="value" id="daily-export">--</div>
-                    <div class="label" data-i18n="grid.export">Export (kWh)</div>
+                    <div class="label" data-i18n="grid.export">Today's Export (kWh)</div>
                 </div>
             </div>
         </div>
@@ -317,7 +317,7 @@
                 <h2 data-i18n="generator.title">Generator</h2>
             </div>
             <div class="metric">
-                <div class="metric-label" data-i18n="generator.power">Generator Power</div>
+                <div class="metric-label" data-i18n="common.power_now">Power now</div>
                 <div class="metric-value" id="generator-power">--<span class="unit" data-i18n="units.w">W</span></div>
             </div>
             <div class="stats-row">
@@ -353,13 +353,13 @@
                 <h2 data-i18n="consumption.title">Consumption</h2>
             </div>
             <div class="metric">
-                <div class="metric-label" data-i18n="consumption.current_load">Current Load</div>
+                <div class="metric-label" data-i18n="common.power_now">Power now</div>
                 <div class="metric-value neutral" id="load-power">--<span class="unit" data-i18n="units.w">W</span></div>
             </div>
             <!-- Last 24 hours (/api/history, renderSparkline) -->
             <div class="sparkline spark-load" data-series="load" role="button" tabindex="0" data-i18n-attr="aria-label:history.open" hidden>
                 <svg viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area"/><path class="spark-line"/></svg>
-                <div class="spark-caption"><span data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
+                <div class="spark-caption"><span class="spark-period" data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
             </div>
             <div class="stat">
                 <div class="value" id="daily-load">--</div>
@@ -541,7 +541,7 @@
                 <span class="meter-demo-badge" id="meter-demo" data-i18n="meter.demo" hidden>Demo data</span>
             </div>
             <div class="metric">
-                <div class="metric-label" data-i18n="meter.power">Current power</div>
+                <div class="metric-label" data-i18n="common.power_now">Power now</div>
                 <div class="metric-value neutral" id="meter-power">--<span class="unit" data-i18n="units.w">W</span></div>
             </div>
             <div class="stats-row" id="meter-single-phase">
@@ -891,7 +891,7 @@
                 <span class="icon-chip" id="details-icon" aria-hidden="true"></span>
                 <div class="details-heading">
                     <h3 id="details-title"></h3>
-                    <span class="details-sub" data-i18n="history.last_24h">Last 24 hours</span>
+                    <span class="details-sub" id="details-period" data-i18n="history.last_24h">Last 24 hours</span>
                 </div>
                 <button type="button" class="close-btn" id="details-close" onclick="closeHistoryDetails()" aria-label="Close" data-i18n-attr="aria-label:common.close">&times;</button>
             </div>

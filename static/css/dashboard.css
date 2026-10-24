@@ -1405,10 +1405,9 @@ body.cards-dragging * {
 }
 
 /* Consumption card: per-phase section below the home load */
+/* No line of its own: the "Today's usage" row above already ends with one */
 .consumption-phases {
     margin-top: 20px;
-    padding-top: 16px;
-    border-top: 1px solid rgba(var(--fg-rgb), 0.08);
 }
 
 .consumption-phases-label {
