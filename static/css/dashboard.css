@@ -932,11 +932,12 @@ body.cards-dragging * {
     text-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.5);
 }
 
-/* Stats row */
+/* Values as rows: the label on the left, the value on the right (the markup
+   has the value first), a thin line under each. Rows of three (.stats-row-3:
+   grid phases, health) stay small tiles. */
 .stats-row {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 16px;
+    display: flex;
+    flex-direction: column;
 }
 
 /* Battery card temperature: amber when cold, red when hot */
@@ -944,8 +945,10 @@ body.cards-dragging * {
 .stat .value.battery-temp-hot { color: var(--red-400); }
 
 .stats-row.stats-row-3 {
+    display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 10px;
+    margin: 6px 0;
 }
 
 .stats-row[hidden],
@@ -954,21 +957,41 @@ body.cards-dragging * {
 }
 
 .stat {
-    text-align: center;
-    padding: 12px;
-    background: rgba(var(--shadow-rgb), 0.2);
-    border-radius: 8px;
+    display: flex;
+    flex-direction: row-reverse;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
 }
 
 .stat .value {
-    font-size: 1.3rem;
+    font-size: 1.1rem;
     font-weight: 600;
+    white-space: nowrap;
 }
 
 .stat .label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.stats-row-3 .stat {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 10px 6px;
+    text-align: center;
+    background: rgba(var(--fg-rgb), 0.04);
+    border: none;
+    border-radius: 10px;
+}
+
+.stats-row-3 .stat .label {
     font-size: 0.75rem;
     color: var(--text-dim);
-    margin-top: 4px;
 }
 
 /* Planned Outages */
@@ -1064,7 +1087,7 @@ body.cards-dragging * {
     align-items: center;
     gap: 10px;
     padding: 8px 10px;
-    background: rgba(var(--shadow-rgb), 0.2);
+    background: rgba(var(--fg-rgb), 0.04);
     border-left: 3px solid var(--red-500);
     border-radius: 6px;
     margin-bottom: 6px;
@@ -1394,7 +1417,7 @@ body.cards-dragging * {
 .phase-bar-track {
     flex: 1;
     height: 24px;
-    background: rgba(var(--shadow-rgb), 0.3);
+    background: rgba(var(--fg-rgb), 0.06);
     border-radius: 6px;
     overflow: hidden;
     position: relative;
