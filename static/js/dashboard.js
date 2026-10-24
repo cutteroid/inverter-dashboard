@@ -641,15 +641,67 @@ function updatePhaseDisplay(data) {
     document.getElementById('voltage-l3').textContent = t('units.voltage_v', { value: (data.voltage_l3 || 0).toFixed(0) });
 }
 
-// Battery power for the banner: 950 -> "950 W", 3135 -> "3.1 kW" (locale decimal
-// separator). The number gets its own span so fullscreen mode can make it stand out.
-function batteryPowerHtml(watts) {
+// Power as a number and unit: 950 -> "950" W, 3135 -> "3.1" kW (locale decimal separator)
+function powerParts(watts) {
     var kw = watts >= 999.5;
-    var number = kw
-        ? (watts / 1000).toLocaleString(i18nLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-        : String(Math.round(watts));
-    return '<span class="battery-flow-power">' + escapeHtml(number) + '</span>\u00A0' +
-        escapeHtml(t(kw ? 'units.kw' : 'units.w'));
+    return {
+        number: kw
+            ? (watts / 1000).toLocaleString(i18nLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+            : String(Math.round(watts)),
+        unit: t(kw ? 'units.kw' : 'units.w')
+    };
+}
+
+// Battery power for the banner. The number gets its own span so fullscreen mode
+// can make it stand out.
+function batteryPowerHtml(watts) {
+    var p = powerParts(watts);
+    return '<span class="battery-flow-power">' + escapeHtml(p.number) + '</span>\u00A0' + escapeHtml(p.unit);
+}
+
+// "Right now" strip: where the power comes from and where it goes (a bar and a
+// list each), by the current readings. Smaller flows are noise (a few watts
+// either way) and left out.
+var FLOW_MIN_W = 20;
+
+function renderPowerFlow(data) {
+    var strip = document.getElementById('flow-strip');
+    var battery = (!inverterConfig || inverterConfig.has_battery !== false) ? (data.battery_power || 0) : 0;
+    var grid = data.grid_power || 0;
+    var generator = (inverterConfig && inverterConfig.has_generator) ? (data.generator_power || 0) : 0;
+    function flows(list) {
+        return list.filter(function(f) { return f.watts >= FLOW_MIN_W; });
+    }
+    var sources = flows([
+        { key: 'solar', watts: data.pv_total_power || 0 },
+        { key: 'grid', watts: grid },            // importing
+        { key: 'battery', watts: -battery },     // discharging
+        { key: 'generator', watts: generator }
+    ]);
+    var uses = flows([
+        { key: 'home', watts: data.load_power || 0 },
+        { key: 'battery', watts: battery },      // charging
+        { key: 'grid', watts: -grid }            // exporting
+    ]);
+    strip.hidden = !uses.length;
+    if (!uses.length) return;
+
+    // One row: label, bar (each flow's share), list with the values
+    function row(direction, items) {
+        if (!items.length) return '';
+        var bar = items.map(function(f) {
+            return '<span class="flow-segment flow-' + direction + '-' + f.key + '" style="flex-grow: ' + Math.round(f.watts) + '"></span>';
+        }).join('');
+        var list = items.map(function(f) {
+            var p = powerParts(f.watts);
+            return '<span class="flow-item"><span class="flow-dot flow-' + direction + '-' + f.key + '"></span>' +
+                escapeHtml(t('flow.' + direction + '_' + f.key)) +
+                ' <strong>' + escapeHtml(p.number) + '\u00A0' + escapeHtml(p.unit) + '</strong></span>';
+        }).join('');
+        return '<span class="flow-label">' + escapeHtml(t('flow.' + direction)) + '</span>' +
+            '<div class="flow-bar">' + bar + '</div><div class="flow-list">' + list + '</div>';
+    }
+    document.getElementById('flow-rows').innerHTML = row('from', sources) + row('to', uses);
 }
 
 // Grid power actually in use: the server decides from the inverter's grid relay
@@ -873,6 +925,8 @@ function updateDashboard() {
             // Load
             document.getElementById('load-power').innerHTML = data.load_power + '<span class="unit">' + t('units.w') + '</span>';
             document.getElementById('daily-load').textContent = fmt(data.daily_load, 1);
+
+            renderPowerFlow(data);
 
             // ===== CARD STATES (border + glow, see .card.* in the CSS) =====
 

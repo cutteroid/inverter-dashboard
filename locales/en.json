@@ -228,6 +228,18 @@
       "UA-77": "Chernivtsi Oblast"
     }
   },
+  "flow": {
+    "title": "Right now",
+    "from": "From",
+    "to": "To",
+    "from_solar": "Solar",
+    "from_grid": "Grid",
+    "from_battery": "Battery",
+    "from_generator": "Generator",
+    "to_home": "Home",
+    "to_battery": "Battery",
+    "to_grid": "Grid"
+  },
   "solar": {
     "title": "Solar Production",
     "total_power": "Total PV Power",

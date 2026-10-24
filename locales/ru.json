@@ -228,6 +228,18 @@
       "UA-77": "Черновицкая область"
     }
   },
+  "flow": {
+    "title": "Сейчас",
+    "from": "Откуда",
+    "to": "Куда",
+    "from_solar": "Солнце",
+    "from_grid": "Сеть",
+    "from_battery": "Батарея",
+    "from_generator": "Генератор",
+    "to_home": "Дом",
+    "to_battery": "Батарея",
+    "to_grid": "Сеть"
+  },
   "solar": {
     "title": "Солнечная генерация",
     "total_power": "Общая мощность PV",

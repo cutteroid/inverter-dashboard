@@ -191,6 +191,14 @@
     </div>
 
     <div class="dashboard">
+        <!-- Right now: where the power comes from and where it goes, a bar and a list
+             each, from the current readings (renderPowerFlow). Not a .card: card
+             ordering leaves it first -->
+        <section class="flow-strip" id="flow-strip" hidden>
+            <span class="flow-title" data-i18n="flow.title">Right now</span>
+            <div class="flow-rows" id="flow-rows"></div>
+        </section>
+
         <!-- Solar Production -->
         <div class="card" id="solar-card" data-id="solar-card">
             <div class="card-header">
