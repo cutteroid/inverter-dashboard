@@ -2781,9 +2781,19 @@ button.onboarding-toggle {
     margin-top: 2px;
 }
 
+/* A hint belongs to the switch above it: close under it, with a clear gap
+   before the next switch */
+.settings-section .onboarding-toggle-row + .settings-hint {
+    margin-top: -6px;
+}
+
+.settings-section .settings-hint + .onboarding-toggle-row {
+    margin-top: 14px;
+}
+
 /* The one note on which settings stay on this device (shown once) */
 .settings-hint.settings-local-note {
-    margin-top: 12px;
+    margin-top: 18px;
 }
 
 .onboarding-btn-row {
