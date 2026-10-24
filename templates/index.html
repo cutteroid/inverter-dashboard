@@ -579,7 +579,7 @@
 
                 <div style="margin-bottom: 16px;">
                     <button class="onboarding-btn secondary" id="onb-scan-btn" onclick="discoverInverters()" style="width:100%;" data-i18n="onboarding.scan_network">Scan Network</button>
-                    <div id="onb-scan-status" style="text-align:center; margin-top:8px; font-size:0.8rem; color:#94a3b8;"></div>
+                    <div id="onb-scan-status" style="text-align:center; margin-top:8px; font-size:0.8rem; color:var(--text-muted);"></div>
                 </div>
                 <div class="discover-results" id="onb-discover-results"></div>
 
@@ -709,14 +709,14 @@
                 <h2 data-i18n="onboarding.step4_title">Optional Features</h2>
                 <p class="subtitle" data-i18n="onboarding.step4_subtitle">Name the dashboard, set up generator tracking and the Telegram bot.</p>
 
-                <div class="onboarding-field" style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 16px; margin-bottom: 16px;">
+                <div class="onboarding-field" style="border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 16px;">
                     <label for="onb-title" data-i18n="onboarding.dashboard_title">Dashboard name</label>
                     <input type="text" class="onboarding-input" id="onb-title" maxlength="40" autocomplete="off"
                            data-i18n-attr="placeholder:app.title">
                     <div class="settings-hint" data-i18n="onboarding.dashboard_title_hint">Shown at the top of the page and in the browser tab. Leave empty for the default.</div>
                 </div>
 
-                <div style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 16px; margin-bottom: 16px;">
+                <div style="border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 16px;">
                     <div class="onboarding-toggle-row">
                         <span data-i18n="onboarding.generator_connected">Generator connected</span>
                         <div class="onboarding-toggle" id="onb-gen-toggle" onclick="toggleOnb(this, 'onb-gen-fields')">

@@ -69,3 +69,38 @@ def test_version_changes_with_content(client, tmp_path, monkeypatch):
     st = os.stat(tmp_path / "x.css")
     os.utime(tmp_path / "x.css", ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
     assert app_module.asset_version("x.css") != v1
+
+
+def _read(rel):
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, rel), encoding="utf-8") as f:
+        return f.read()
+
+
+COLOR_LITERAL = re.compile(r"#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b|rgba?\(\s*\d")
+
+
+def test_colours_come_from_tokens():
+    """Colours are defined once, in the token block at the top of the CSS (the
+    base for themes); rules, inline styles and the JS only use var(--…)."""
+    css = _read("static/css/dashboard.css")
+    assert css.startswith("/* Colour tokens"), "the token block must stay at the top"
+    end = css.index("\n}\n") + 3
+    tokens, rules = css[:end], css[end:]
+    assert COLOR_LITERAL.findall(rules) == []
+    html = _read("templates/index.html").replace("&#", "")
+    js = _read("static/js/dashboard.js")
+    assert COLOR_LITERAL.findall(html) == []
+    assert COLOR_LITERAL.findall(js) == []
+
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    defined = set(re.findall(r"^\s*(--[a-z0-9-]+):", css, re.M))
+    for name, text in (("css", css), ("html", html), ("js", js)):
+        used = set(re.findall(r"var\((--[a-z0-9-]+)\)", text))
+        assert used <= defined, (name, sorted(used - defined))
+    # Every colour token is used somewhere
+    colour_tokens = set(re.findall(r"^\s*(--[a-z0-9-]+):", tokens, re.M))
+    everything = css + html + js
+    unused = [t for t in colour_tokens if "var(%s)" % t not in everything]
+    assert unused == []

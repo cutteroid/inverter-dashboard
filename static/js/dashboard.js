@@ -1367,7 +1367,7 @@ function updateBatteryOverlay(data) {
 
     // Skip battery overlay when no battery is configured
     if (inverterConfig && inverterConfig.has_battery === false) {
-        overlay.style.background = 'rgba(120, 15, 15, 0)';
+        overlay.style.background = 'rgba(var(--alarm-rgb), 0)';
         return;
     }
 
@@ -1376,9 +1376,9 @@ function updateBatteryOverlay(data) {
     if (!gridIsOnline(data) && soc < 50) {
         // More aggressive: 0.1 at SOC 45%, up to 0.6 at SOC 0%
         var opacity = Math.min(((50 - soc) / 50) * 0.5 + 0.1, 0.6);
-        overlay.style.background = 'rgba(120, 15, 15, ' + opacity.toFixed(3) + ')';
+        overlay.style.background = 'rgba(var(--alarm-rgb), ' + opacity.toFixed(3) + ')';
     } else {
-        overlay.style.background = 'rgba(120, 15, 15, 0)';
+        overlay.style.background = 'rgba(var(--alarm-rgb), 0)';
     }
 }
 
@@ -2398,7 +2398,7 @@ function resetConfiguration() {
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.status === 'ok') {
-                document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#94a3b8;font-size:1.2rem;">' + t('settings.restarting') + '</div>';
+                document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:var(--text-muted);font-size:1.2rem;">' + t('settings.restarting') + '</div>';
                 setTimeout(function() { location.reload(); }, 4000);
             }
         })
