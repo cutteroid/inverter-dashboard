@@ -116,7 +116,8 @@ function refreshTranslatedContent() {
         function() { renderAlerts(); },
         function() { renderSmartMeter(); },
         function() { renderOutageReadiness(); },
-        function() { renderSparklines(); },
+        function() { renderSparklines(); renderHistoryDetails(); },
+        function() { renderCardSettings(); },
         function() { updateDashboard(); },
     ];
     refreshers.forEach(function(fn) {
@@ -369,6 +370,7 @@ function returnToTop() {
     // A card is still being dragged: wait for the next quiet period
     if (document.body.classList.contains('cards-dragging')) { scheduleReturnToTop(); return; }
     returningToTop = true;
+    closeHistoryDetails();
     window.scrollTo({ top: 0, behavior: isLowPower() ? 'auto' : 'smooth' });
     setTimeout(function() { returningToTop = false; }, 1500);
 }
@@ -1067,6 +1069,7 @@ function loadHistory() {
         .then(function(data) {
             historyData = data;
             renderSparklines();
+            renderHistoryDetails();
         })
         .catch(function(error) { console.error('History fetch error:', error); });
 }
@@ -1077,48 +1080,212 @@ function renderSparklines() {
     });
 }
 
-function renderSparkline(el, h) {
-    var name = el.getAttribute('data-series');
-    var values = (h && h[name]) || [];
+// The series' readings as points (bucket middle, value); buckets without one are skipped
+function historyPoints(h, name) {
     var points = [];
-    values.forEach(function(v, i) {
+    ((h && h[name]) || []).forEach(function(v, i) {
         if (typeof v === 'number') points.push({ t: h.t[i] + h.bucket_seconds / 2, v: v });
     });
-    el.hidden = points.length < 2;
-    if (el.hidden) return;
+    return points;
+}
 
-    var span = 24 * 3600, start = h.now - span;
-    var max = name === 'soc' ? 100 : Math.max(100, Math.max.apply(null, points.map(function(p) { return p.v; })));
-    var top = 3, bottom = SPARK_H - 1;
-    function x(p) { return (Math.max(0, p.t - start) / span * SPARK_W).toFixed(1); }
-    function y(p) { return (bottom - Math.max(0, p.v) / max * (bottom - top)).toFixed(1); }
-
-    // Runs of consecutive buckets; a missing one starts a new run
+// Line and area paths, one run per stretch of consecutive buckets (a missing
+// bucket starts a new run). x(p), y(p) map a point; base is the area's bottom.
+function historyPaths(points, bucketSeconds, x, y, base) {
     var runs = [], run = [];
     points.forEach(function(p, i) {
-        if (i && p.t - points[i - 1].t > h.bucket_seconds * 1.5) { runs.push(run); run = []; }
+        if (i && p.t - points[i - 1].t > bucketSeconds * 1.5) { runs.push(run); run = []; }
         run.push(p);
     });
     runs.push(run);
     var line = '', area = '';
     runs.forEach(function(r) {
-        var path = r.map(function(p, i) { return (i ? 'L' : 'M') + x(p) + ' ' + y(p); }).join(' ');
+        var path = r.map(function(p, i) { return (i ? 'L' : 'M') + x(p).toFixed(1) + ' ' + y(p).toFixed(1); }).join(' ');
         line += path + ' ';
-        area += path + ' L' + x(r[r.length - 1]) + ' ' + SPARK_H + ' L' + x(r[0]) + ' ' + SPARK_H + ' Z ';
+        area += path + ' L' + x(r[r.length - 1]).toFixed(1) + ' ' + base + ' L' + x(r[0]).toFixed(1) + ' ' + base + ' Z ';
     });
-    el.querySelector('.spark-line').setAttribute('d', line.trim());
-    el.querySelector('.spark-area').setAttribute('d', area.trim());
-
-    var vs = points.map(function(p) { return p.v; });
-    var extra;
-    if (name === 'soc') {
-        extra = t('history.range', { min: Math.round(Math.min.apply(null, vs)), max: Math.round(Math.max.apply(null, vs)) });
-    } else {
-        var peak = powerParts(Math.max.apply(null, vs));
-        extra = t('history.peak', { value: peak.number + ' ' + peak.unit });
-    }
-    el.querySelector('.spark-extra').textContent = extra;
+    return { line: line.trim(), area: area.trim() };
 }
+
+function historyValueText(name, v) {
+    if (name === 'soc') return Math.round(v) + '%';
+    var p = powerParts(v);
+    return p.number + ' ' + p.unit;
+}
+
+function renderSparkline(el, h) {
+    var name = el.getAttribute('data-series');
+    var points = historyPoints(h, name);
+    el.hidden = points.length < 2;
+    if (el.hidden) return;
+
+    var span = 24 * 3600, start = h.now - span;
+    var vs = points.map(function(p) { return p.v; });
+    var max = name === 'soc' ? 100 : Math.max(100, Math.max.apply(null, vs));
+    var top = 3, bottom = SPARK_H - 1;
+    var paths = historyPaths(points, h.bucket_seconds,
+        function(p) { return Math.max(0, p.t - start) / span * SPARK_W; },
+        function(p) { return bottom - Math.max(0, p.v) / max * (bottom - top); },
+        SPARK_H);
+    el.querySelector('.spark-line').setAttribute('d', paths.line);
+    el.querySelector('.spark-area').setAttribute('d', paths.area);
+
+    el.querySelector('.spark-extra').textContent = name === 'soc'
+        ? t('history.range', { min: Math.round(Math.min.apply(null, vs)), max: Math.round(Math.max.apply(null, vs)) })
+        : t('history.peak', { value: historyValueText(name, Math.max.apply(null, vs)) });
+}
+
+// ===== 24-HOUR DETAILS =====
+// Tapping a sparkline opens its 24 hours as a larger chart: a time axis, the
+// value at the touched point, and now / peak / total (charge: now / lowest /
+// highest). Closes with ×, Escape, a tap outside, or the fullscreen return to
+// the first screen.
+var DETAILS_W = 600, DETAILS_H = 220;
+var DETAILS_LEFT = 52, DETAILS_RIGHT = 10, DETAILS_TOP = 12, DETAILS_BOTTOM = 26;
+var detailsSpark = null;   // the sparkline whose details are open
+var detailsAt = null;      // time of the touched point (null: the latest)
+
+function openHistoryDetails(sparkEl) {
+    detailsSpark = sparkEl;
+    detailsAt = null;
+    var card = sparkEl.closest('.card');
+    var chip = card && card.querySelector('.card-header .icon-chip');
+    var icon = document.getElementById('details-icon');
+    icon.className = chip ? chip.className.replace(/\bicon\b/, '').trim() : 'icon-chip';
+    icon.innerHTML = chip ? chip.innerHTML : '';
+    document.getElementById('details-overlay').hidden = false;
+    renderHistoryDetails();
+    document.getElementById('details-dialog').focus();
+}
+
+function closeHistoryDetails() {
+    if (!detailsSpark) return;
+    var spark = detailsSpark;
+    detailsSpark = null;
+    document.getElementById('details-overlay').hidden = true;
+    if (document.activeElement && document.activeElement.closest('#details-overlay')) spark.focus();
+}
+
+// A round axis top: 3300 -> 4000, 870 -> 1000, 2100 -> 2500
+function niceCeil(value) {
+    var magnitude = Math.pow(10, Math.floor(Math.log10(value)));
+    var steps = [1, 2, 2.5, 5, 10];
+    for (var i = 0; i < steps.length; i++) {
+        if (value <= steps[i] * magnitude) return steps[i] * magnitude;
+    }
+    return 10 * magnitude;
+}
+
+function clockText(seconds) {
+    var d = new Date(seconds * 1000);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+function renderHistoryDetails() {
+    if (!detailsSpark) return;
+    var name = detailsSpark.getAttribute('data-series');
+    var h = historyData;
+    var points = historyPoints(h, name);
+    var card = detailsSpark.closest('.card');
+    document.getElementById('details-title').textContent = card ? cardTitle(card) : '';
+    var chart = document.getElementById('details-chart');
+    chart.setAttribute('class', 'details-chart ' + Array.prototype.filter.call(detailsSpark.classList, function(c) {
+        return c.indexOf('spark-') === 0;
+    }).join(' '));
+    if (!points.length) {
+        chart.innerHTML = '';
+        document.getElementById('details-readout').textContent = '';
+        document.getElementById('details-stats').innerHTML = '';
+        return;
+    }
+
+    var span = 24 * 3600, start = h.now - span;
+    var vs = points.map(function(p) { return p.v; });
+    var max = name === 'soc' ? 100 : niceCeil(Math.max(100, Math.max.apply(null, vs)));
+    var left = DETAILS_LEFT, right = DETAILS_W - DETAILS_RIGHT, top = DETAILS_TOP, bottom = DETAILS_H - DETAILS_BOTTOM;
+    function x(p) { return left + Math.max(0, p.t - start) / span * (right - left); }
+    function y(p) { return bottom - Math.max(0, p.v) / max * (bottom - top); }
+
+    var svg = '';
+    // Value grid: 0, half, top
+    [0, 0.5, 1].forEach(function(f) {
+        var gy = (bottom - f * (bottom - top)).toFixed(1);
+        svg += '<line class="details-grid" x1="' + left + '" x2="' + right + '" y1="' + gy + '" y2="' + gy + '"/>' +
+            '<text class="details-label" x="' + (left - 8) + '" y="' + gy + '" text-anchor="end" dominant-baseline="middle">' +
+            escapeHtml(historyValueText(name, f * max)) + '</text>';
+    });
+    // Time axis: every 6 hours on the clock (00, 06, 12, 18)
+    for (var tick = Math.ceil(start / 3600) * 3600; tick <= h.now; tick += 3600) {
+        if (new Date(tick * 1000).getHours() % 6) continue;
+        var tx = x({ t: tick }).toFixed(1);
+        svg += '<line class="details-grid details-grid-time" x1="' + tx + '" x2="' + tx + '" y1="' + top + '" y2="' + bottom + '"/>' +
+            '<text class="details-label" x="' + tx + '" y="' + (DETAILS_H - 6) + '" text-anchor="middle">' + clockText(tick) + '</text>';
+    }
+    var paths = historyPaths(points, h.bucket_seconds, x, y, bottom);
+    svg += '<path class="spark-area" d="' + paths.area + '"/><path class="spark-line" d="' + paths.line + '"/>';
+
+    // The touched point (or the latest)
+    var at = points[points.length - 1];
+    if (detailsAt !== null) {
+        points.forEach(function(p) { if (Math.abs(p.t - detailsAt) < Math.abs(at.t - detailsAt)) at = p; });
+    }
+    var ax = x(at).toFixed(1), ay = y(at).toFixed(1);
+    svg += '<line class="details-marker" x1="' + ax + '" x2="' + ax + '" y1="' + top + '" y2="' + bottom + '"/>' +
+        '<circle class="details-dot" cx="' + ax + '" cy="' + ay + '" r="4"/>';
+    chart.innerHTML = svg;
+    document.getElementById('details-readout').innerHTML =
+        '<span>' + escapeHtml(detailsAt === null ? t('history.now') : clockText(at.t - h.bucket_seconds / 2)) + '</span>' +
+        '<strong>' + escapeHtml(historyValueText(name, at.v)) + '</strong>';
+
+    var latest = points[points.length - 1].v;
+    var stats;
+    if (name === 'soc') {
+        stats = [['history.now', historyValueText(name, latest)],
+                 ['history.lowest', historyValueText(name, Math.min.apply(null, vs))],
+                 ['history.highest', historyValueText(name, Math.max.apply(null, vs))]];
+    } else {
+        var kwh = vs.reduce(function(sum, v) { return sum + v; }, 0) * h.bucket_seconds / 3600 / 1000;
+        stats = [['history.now', historyValueText(name, latest)],
+                 ['history.peak_label', historyValueText(name, Math.max.apply(null, vs))],
+                 ['history.total', fmt(kwh, 1) + ' ' + t('units.kwh')]];
+    }
+    document.getElementById('details-stats').innerHTML = stats.map(function(s) {
+        return '<div class="details-stat"><span>' + escapeHtml(t(s[0])) + '</span><strong>' + escapeHtml(s[1]) + '</strong></div>';
+    }).join('');
+}
+
+(function() {
+    var overlay = document.getElementById('details-overlay');
+    var chart = document.getElementById('details-chart');
+    if (!overlay || !chart) return;
+    document.addEventListener('click', function(e) {
+        var spark = e.target.closest('.sparkline[data-series]');
+        if (spark && !spark.hidden) openHistoryDetails(spark);
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && detailsSpark) { closeHistoryDetails(); return; }
+        var spark = e.target.closest && e.target.closest('.sparkline[data-series]');
+        if (spark && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openHistoryDetails(spark); }
+    });
+    overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) closeHistoryDetails();
+    });
+    // Touch or hover the chart: the value at that time
+    function touched(e) {
+        if (!detailsSpark || !historyData) return;
+        var rect = chart.getBoundingClientRect();
+        var vx = (e.clientX - rect.left) / rect.width * DETAILS_W;
+        var f = (vx - DETAILS_LEFT) / (DETAILS_W - DETAILS_RIGHT - DETAILS_LEFT);
+        detailsAt = historyData.now - 24 * 3600 + Math.min(1, Math.max(0, f)) * 24 * 3600;
+        renderHistoryDetails();
+    }
+    chart.addEventListener('pointerdown', touched);
+    chart.addEventListener('pointermove', touched);
+    chart.addEventListener('pointerleave', function() {
+        detailsAt = null;
+        renderHistoryDetails();
+    });
+})();
 
 loadHistory();
 setInterval(loadHistory, HISTORY_POLL_MS);

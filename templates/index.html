@@ -210,7 +210,7 @@
                 <div class="metric-value positive" id="pv-total">--<span class="unit" data-i18n="units.w">W</span></div>
             </div>
             <!-- Last 24 hours (/api/history, renderSparkline) -->
-            <div class="sparkline spark-solar" data-series="pv" hidden>
+            <div class="sparkline spark-solar" data-series="pv" role="button" tabindex="0" data-i18n-attr="aria-label:history.open" hidden>
                 <svg viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area"/><path class="spark-line"/></svg>
                 <div class="spark-caption"><span data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
             </div>
@@ -243,7 +243,7 @@
                 </div>
             </div>
             <!-- Last 24 hours (/api/history, renderSparkline) -->
-            <div class="sparkline spark-battery" data-series="soc" hidden>
+            <div class="sparkline spark-battery" data-series="soc" role="button" tabindex="0" data-i18n-attr="aria-label:history.open" hidden>
                 <svg viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area"/><path class="spark-line"/></svg>
                 <div class="spark-caption"><span data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
             </div>
@@ -357,7 +357,7 @@
                 <div class="metric-value neutral" id="load-power">--<span class="unit" data-i18n="units.w">W</span></div>
             </div>
             <!-- Last 24 hours (/api/history, renderSparkline) -->
-            <div class="sparkline spark-load" data-series="load" hidden>
+            <div class="sparkline spark-load" data-series="load" role="button" tabindex="0" data-i18n-attr="aria-label:history.open" hidden>
                 <svg viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area"/><path class="spark-line"/></svg>
                 <div class="spark-caption"><span data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
             </div>
@@ -881,6 +881,23 @@
             <a class="donate-link" href="https://donatello.to/IvanUrsul" target="_blank" rel="noopener">
                 Ivan Ursul <span class="donate-role" data-i18n="settings.donate_original">original project</span>
             </a>
+        </div>
+    </div>
+
+    <!-- A sparkline's 24 hours as a larger chart, opened by tapping it (openHistoryDetails) -->
+    <div class="details-overlay" id="details-overlay" hidden>
+        <div class="details-dialog" id="details-dialog" role="dialog" aria-modal="true" aria-labelledby="details-title" tabindex="-1">
+            <div class="details-header">
+                <span class="icon-chip" id="details-icon" aria-hidden="true"></span>
+                <div class="details-heading">
+                    <h3 id="details-title"></h3>
+                    <span class="details-sub" data-i18n="history.last_24h">Last 24 hours</span>
+                </div>
+                <button type="button" class="close-btn" id="details-close" onclick="closeHistoryDetails()" aria-label="Close" data-i18n-attr="aria-label:common.close">&times;</button>
+            </div>
+            <div class="details-readout" id="details-readout"></div>
+            <svg class="details-chart" id="details-chart" viewBox="0 0 600 220" aria-hidden="true"></svg>
+            <div class="details-stats" id="details-stats"></div>
         </div>
     </div>
 
