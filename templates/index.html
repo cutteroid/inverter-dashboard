@@ -209,6 +209,11 @@
                 <div class="metric-label" data-i18n="solar.total_power">Total PV Power</div>
                 <div class="metric-value positive" id="pv-total">--<span class="unit" data-i18n="units.w">W</span></div>
             </div>
+            <!-- Last 24 hours (/api/history, renderSparkline) -->
+            <div class="sparkline spark-solar" data-series="pv" hidden>
+                <svg viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area"/><path class="spark-line"/></svg>
+                <div class="spark-caption"><span data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
+            </div>
             <div class="stats-row">
                 <div class="stat">
                     <div class="value" id="pv1-power">--</div>
@@ -236,6 +241,11 @@
                     <div class="battery-fill" id="battery-fill" style="width: 0%"></div>
                     <div class="battery-text" id="battery-soc">--%</div>
                 </div>
+            </div>
+            <!-- Last 24 hours (/api/history, renderSparkline) -->
+            <div class="sparkline spark-battery" data-series="soc" hidden>
+                <svg viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area"/><path class="spark-line"/></svg>
+                <div class="spark-caption"><span data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
             </div>
             <div class="stats-row">
                 <div class="stat">
@@ -345,6 +355,11 @@
             <div class="metric">
                 <div class="metric-label" data-i18n="consumption.current_load">Current Load</div>
                 <div class="metric-value neutral" id="load-power">--<span class="unit" data-i18n="units.w">W</span></div>
+            </div>
+            <!-- Last 24 hours (/api/history, renderSparkline) -->
+            <div class="sparkline spark-load" data-series="load" hidden>
+                <svg viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area"/><path class="spark-line"/></svg>
+                <div class="spark-caption"><span data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
             </div>
             <div class="stat" style="margin-top: 16px;">
                 <div class="value" id="daily-load">--</div>

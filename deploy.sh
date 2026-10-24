@@ -111,6 +111,7 @@ FILES=(
     "air_alerts.py"
     "smart_meter.py"
     "outage_readiness.py"
+    "history.py"
     "requirements.txt"
     "templates"
     "static"

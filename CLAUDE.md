@@ -93,7 +93,7 @@ Map: `static/data/ukraine-regions.json` (regions by ISO 3166-2 code, districts b
 Background services start once in `main()` (`init_services()`), not at import — importing `app` (tests, WSGI) starts nothing. Do not reintroduce a reloader/multi-process server: every poller would run in each process.
 
 The app runs several daemon threads:
-- `InverterPoller` — one full inverter read every 30s (`INVERTER_POLL_SECONDS`; also feeds the battery smoothing), caches to JSON file
+- `InverterPoller` — one full inverter read every 30s (`INVERTER_POLL_SECONDS`; also feeds the battery smoothing and the sparkline history), caches to JSON file
 - `inverter-detect` — one-off background auto-detect; updates the shared `InverterConfig` in place and saves it to `inverter_config.json` for the next start
 - `WeatherPoller` — fetches Open-Meteo weather every 15 min
 - `OutageSchedulePoller` — fetches outage schedule every 60s
@@ -170,6 +170,7 @@ Config saved from the UI is validated by `setup.validate_config()` (types, range
 | `/api/phase-stats/clear` | POST | Clear phase statistics |
 | `/api/alerts` | GET | Air raid alert statuses by region/district |
 | `/api/smart-meter` | GET | Smart meter readings (`status: disabled` when off) |
+| `/api/history` | GET | Last 24 h of battery SOC, PV and load in 5-minute averages for the card sparklines (`history.py`: `PowerHistory`, fed by `InverterPoller` with good readings only, saved to `power_history.json` when a bucket closes; parallel lists `t`/`soc`/`pv`/`load`, `null` = no reading, plus `bucket_seconds` and the server's `now`) |
 | `/api/outage-readiness` | GET | Will the battery last through the next planned outage (`outage_readiness.py`: recent average load × window vs charge above the shutdown SOC; `status`: disabled/no_schedule/no_data/no_outage/ok, `verdict`: enough/tight/short) |
 
 ## Configuration

@@ -37,6 +37,7 @@ COPY storage.py .
 COPY air_alerts.py .
 COPY smart_meter.py .
 COPY outage_readiness.py .
+COPY history.py .
 COPY setup.py .
 COPY discover_inverter.py .
 # MIT: the license and its copyright notices ship with every copy

@@ -240,6 +240,11 @@
     "to_battery": "Батарея",
     "to_grid": "Сеть"
   },
+  "history": {
+    "last_24h": "Последние 24 часа",
+    "peak": "пик {value}",
+    "range": "{min}–{max}%"
+  },
   "solar": {
     "title": "Солнечная генерация",
     "total_power": "Общая мощность PV",

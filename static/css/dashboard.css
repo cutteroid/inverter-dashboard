@@ -686,6 +686,53 @@ body.fullscreen-mode .battery-runtime-value {
 .flow-from-battery, .flow-to-battery { --flow-color: var(--mint-400); }
 .flow-from-generator { --flow-color: var(--orange-400); }
 
+/* Sparkline: the last 24 hours under a card's main value (renderSparkline).
+   Its colour: --spark-rgb, set per card. */
+.sparkline {
+    --spark-rgb: var(--slate-300-rgb);
+    margin: -4px 0 16px;
+}
+
+.sparkline[hidden] {
+    display: none;
+}
+
+.sparkline svg {
+    display: block;
+    width: 100%;
+    height: 48px;
+}
+
+.spark-line {
+    fill: none;
+    stroke: rgb(var(--spark-rgb));
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+}
+
+.spark-area {
+    fill: rgba(var(--spark-rgb), 0.14);
+}
+
+.spark-caption {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 4px;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+}
+
+.spark-solar { --spark-rgb: var(--amber-400-rgb); }
+.spark-battery { --spark-rgb: var(--mint-400-rgb); }
+
+/* The battery card's sparkline sits under the charge bar */
+.battery-gauge + .sparkline {
+    margin-top: 0;
+}
+
 .card {
     background: var(--surface);
     border-radius: 16px;

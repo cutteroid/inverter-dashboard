@@ -13,6 +13,7 @@ from storage import atomic_write_json, data_path, load_json
 from air_alerts import AlertsPoller, create_alerts_provider, REGION_CODES
 from outage_readiness import outage_readiness
 from smart_meter import create_smart_meter_from_env
+from history import PowerHistory
 from datetime import datetime, date, timedelta
 from functools import wraps
 import hashlib
@@ -136,6 +137,7 @@ class WeatherPoller:
 
 # Data files default to data/ (persistent Docker volume) — see storage.data_path()
 INVERTER_CACHE_FILE = os.environ.get("INVERTER_CACHE_FILE") or data_path("inverter_cache.json")
+POWER_HISTORY_FILE = os.environ.get("POWER_HISTORY_FILE") or data_path("power_history.json")
 # Overrides the capacity the inverter reports (for the battery runtime estimate)
 BATTERY_CAPACITY_KWH = env_float("BATTERY_CAPACITY_KWH", 0.0)
 INVERTER_POLL_SECONDS = 30   # one full read; battery voltage/SOC are smoothed over the last 6 (3 min)
@@ -186,9 +188,10 @@ INVERTER_CACHE_MAX_AGE = 300  # seconds – serve cached data if fresher than 5 
 class InverterPoller:
     """Polls inverter for current data in a background thread."""
 
-    def __init__(self, inverter, poll_interval=INVERTER_POLL_SECONDS, cache_file=None):
+    def __init__(self, inverter, poll_interval=INVERTER_POLL_SECONDS, cache_file=None, history=None):
         self.inverter = inverter
         self.poll_interval = poll_interval
+        self.history = history  # PowerHistory for the sparklines (good readings only)
         self._cache = {}
         self._lock = threading.Lock()
         self.cache_file = cache_file
@@ -254,6 +257,8 @@ class InverterPoller:
                 self._add_runtime_estimate(result)
                 self._add_load_average(result)
                 self._add_battery_cycles(result)
+                if self.history is not None:
+                    self.history.add(result)
             with self._lock:
                 self._cache = result
             self._save_cache()
@@ -483,6 +488,7 @@ inverter_config = None
 outage_poller = None
 weather_poller = None
 inverter_poller = None
+power_history = None
 alerts_poller = None
 smart_meter = None
 
@@ -550,7 +556,7 @@ def require_settings_pin(view):
 def init_services():
     """Initialise all background services (inverter, pollers, etc.)."""
     global inverter, inverter_config
-    global outage_poller, weather_poller, inverter_poller
+    global outage_poller, weather_poller, inverter_poller, power_history
     global alerts_poller, smart_meter
 
     inverter = create_inverter(os.environ)
@@ -597,7 +603,8 @@ def init_services():
 
     weather_poller = WeatherPoller()
     weather_poller.start()
-    inverter_poller = InverterPoller(inverter, cache_file=INVERTER_CACHE_FILE)
+    power_history = PowerHistory(POWER_HISTORY_FILE)
+    inverter_poller = InverterPoller(inverter, cache_file=INVERTER_CACHE_FILE, history=power_history)
     inverter_poller.start()
 
 
@@ -847,6 +854,15 @@ def get_data():
     if age != float("inf"):
         data["data_age_seconds"] = max(0, int(age))
     return jsonify(data)
+
+
+@app.route("/api/history")
+def get_history():
+    """Battery charge, solar and load over the last 24 hours, 5-minute averages (history.py)
+    for the cards' sparklines. Empty lists until the first readings."""
+    if power_history is None:
+        return jsonify(PowerHistory().series())
+    return jsonify(power_history.series())
 
 
 @app.route("/api/phase-stats")

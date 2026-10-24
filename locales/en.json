@@ -240,6 +240,11 @@
     "to_battery": "Battery",
     "to_grid": "Grid"
   },
+  "history": {
+    "last_24h": "Last 24 hours",
+    "peak": "peak {value}",
+    "range": "{min}–{max}%"
+  },
   "solar": {
     "title": "Solar Production",
     "total_power": "Total PV Power",

@@ -116,6 +116,7 @@ function refreshTranslatedContent() {
         function() { renderAlerts(); },
         function() { renderSmartMeter(); },
         function() { renderOutageReadiness(); },
+        function() { renderSparklines(); },
         function() { updateDashboard(); },
     ];
     refreshers.forEach(function(fn) {
@@ -1050,6 +1051,76 @@ setInterval(updateDashboard, 5000);
 
 // Refresh phase stats every 30 seconds
 setInterval(loadPhaseStats, 30000);
+
+// ===== SPARKLINES =====
+// Battery charge, solar and load over the last 24 hours: 5-minute averages
+// from /api/history (history.py), drawn on a fixed 24-hour axis ending at the
+// server's "now". A gap in the data (dashboard off, no reading) breaks the line.
+var HISTORY_POLL_MS = 5 * 60 * 1000;
+var SPARK_W = 300, SPARK_H = 48;   // the SVG's viewBox
+var historyData = null;
+
+function loadHistory() {
+    fetch('/api/history')
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            historyData = data;
+            renderSparklines();
+        })
+        .catch(function(error) { console.error('History fetch error:', error); });
+}
+
+function renderSparklines() {
+    document.querySelectorAll('.sparkline[data-series]').forEach(function(el) {
+        renderSparkline(el, historyData);
+    });
+}
+
+function renderSparkline(el, h) {
+    var name = el.getAttribute('data-series');
+    var values = (h && h[name]) || [];
+    var points = [];
+    values.forEach(function(v, i) {
+        if (typeof v === 'number') points.push({ t: h.t[i] + h.bucket_seconds / 2, v: v });
+    });
+    el.hidden = points.length < 2;
+    if (el.hidden) return;
+
+    var span = 24 * 3600, start = h.now - span;
+    var max = name === 'soc' ? 100 : Math.max(100, Math.max.apply(null, points.map(function(p) { return p.v; })));
+    var top = 3, bottom = SPARK_H - 1;
+    function x(p) { return (Math.max(0, p.t - start) / span * SPARK_W).toFixed(1); }
+    function y(p) { return (bottom - Math.max(0, p.v) / max * (bottom - top)).toFixed(1); }
+
+    // Runs of consecutive buckets; a missing one starts a new run
+    var runs = [], run = [];
+    points.forEach(function(p, i) {
+        if (i && p.t - points[i - 1].t > h.bucket_seconds * 1.5) { runs.push(run); run = []; }
+        run.push(p);
+    });
+    runs.push(run);
+    var line = '', area = '';
+    runs.forEach(function(r) {
+        var path = r.map(function(p, i) { return (i ? 'L' : 'M') + x(p) + ' ' + y(p); }).join(' ');
+        line += path + ' ';
+        area += path + ' L' + x(r[r.length - 1]) + ' ' + SPARK_H + ' L' + x(r[0]) + ' ' + SPARK_H + ' Z ';
+    });
+    el.querySelector('.spark-line').setAttribute('d', line.trim());
+    el.querySelector('.spark-area').setAttribute('d', area.trim());
+
+    var vs = points.map(function(p) { return p.v; });
+    var extra;
+    if (name === 'soc') {
+        extra = t('history.range', { min: Math.round(Math.min.apply(null, vs)), max: Math.round(Math.max.apply(null, vs)) });
+    } else {
+        var peak = powerParts(Math.max.apply(null, vs));
+        extra = t('history.peak', { value: peak.number + ' ' + peak.unit });
+    }
+    el.querySelector('.spark-extra').textContent = extra;
+}
+
+loadHistory();
+setInterval(loadHistory, HISTORY_POLL_MS);
 
 // ===== OUTAGE SCHEDULE =====
 var latestInverterData = null;
