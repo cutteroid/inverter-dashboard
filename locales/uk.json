@@ -46,12 +46,7 @@
     "age_min": "{n} хв тому",
     "age_h": "{n} год тому",
     "updated_at": "Дані на {time}",
-    "connection_failed": "Помилка з'єднання",
-    "live_short": "Онлайн",
-    "stale_short": "{age}",
-    "pulling_short": "Очікування",
-    "error_short": "Помилка",
-    "offline_short": "Немає зв'язку"
+    "connection_failed": "Помилка з'єднання"
   },
   "inverter": {
     "unsupported": "Інвертор визначається як {type} (тип пристрою {code}). Дашборд поки не вміє читати інвертори цього типу, тож показники нижче, ймовірно, неправильні.",

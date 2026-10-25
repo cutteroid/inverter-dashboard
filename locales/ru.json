@@ -46,12 +46,7 @@
     "age_min": "{n} мин назад",
     "age_h": "{n} ч назад",
     "updated_at": "Данные на {time}",
-    "connection_failed": "Ошибка соединения",
-    "live_short": "Онлайн",
-    "stale_short": "{age}",
-    "pulling_short": "Ожидание",
-    "error_short": "Ошибка",
-    "offline_short": "Нет связи"
+    "connection_failed": "Ошибка соединения"
   },
   "inverter": {
     "unsupported": "Инвертор определяется как {type} (тип устройства {code}). Дашборд пока не умеет читать инверторы этого типа, поэтому показания ниже, вероятно, неверны.",

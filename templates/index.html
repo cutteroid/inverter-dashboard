@@ -56,10 +56,15 @@
     <div class="fullscreen-banner-wrapper">
         <!-- Weather Forecast Banner (visible in fullscreen only) -->
         <div class="weather-forecast-banner" id="weather-forecast-banner">
-            <!-- Clock with the live status under it (the app bar is hidden in fullscreen) -->
+            <!-- Clock with the date under it (the app bar is hidden in fullscreen). The
+                 live status is the dot before the date: its colour, and its text in the
+                 tooltip. No wider than the clock, so the banner keeps its size -->
             <div class="weather-forecast-clock-block">
                 <div class="weather-forecast-clock" id="weather-forecast-clock">--:--</div>
-                <div class="status status-pill" id="fullscreen-status" data-i18n="status.connecting">Connecting...</div>
+                <div class="weather-forecast-dateline">
+                    <span class="status-dot" id="fullscreen-status" role="img" title="Connecting..." aria-label="Connecting..." data-i18n-attr="title:status.connecting;aria-label:status.connecting"></span>
+                    <span class="weather-forecast-date" id="weather-forecast-date"></span>
+                </div>
             </div>
             <div class="weather-forecast-current">
                 <div class="weather-forecast-icon" id="weather-forecast-icon">--</div>

@@ -117,6 +117,7 @@ function refreshTranslatedContent() {
         function() { renderSmartMeter(); },
         function() { renderOutageReadiness(); },
         function() { renderSparklines(); renderHistoryDetails(); },
+        function() { updateClock(); },
         function() { renderCardSettings(); },
         function() { updateDashboard(); },
     ];
@@ -833,18 +834,25 @@ function formatAge(seconds) {
     return t('status.age_h', { n: Math.floor(seconds / 3600) });
 }
 
-// Both status pills: the app bar's and the one under the fullscreen clock.
-// shortKey / shortParams: a shorter text for the fullscreen one, which must
-// stay no wider than the clock (else the weather banner wraps)
+// The status in the app bar's pill, and as the dot by the fullscreen date (its
+// colour; the text goes to its tooltip and screen readers). title: details.
 var STATUS_STATES = ['online', 'stale', 'loading', 'error'];
 
-function showStatus(key, params, state, title, shortKey, shortParams) {
-    [['status', key, params], ['fullscreen-status', shortKey || key, shortKey ? shortParams : params]].forEach(function(p) {
-        var el = document.getElementById(p[0]);
-        if (!el) return;
-        setI18nText(el, p[1], p[2]);
-        STATUS_STATES.forEach(function(s) { el.classList.toggle(s, s === state); });
-        el.title = title || '';
+function showStatus(key, params, state, title) {
+    var pill = document.getElementById('status');
+    var dot = document.getElementById('fullscreen-status');
+    if (pill) {
+        setI18nText(pill, key, params);
+        pill.title = title || '';
+    }
+    if (dot) {
+        var text = t(key, params);
+        dot.removeAttribute('data-i18n-attr');   // the text below replaces the static one
+        dot.setAttribute('aria-label', text);
+        dot.title = title ? text + ' · ' + title : text;
+    }
+    [pill, dot].forEach(function(el) {
+        if (el) STATUS_STATES.forEach(function(s) { el.classList.toggle(s, s === state); });
     });
 }
 
@@ -853,8 +861,7 @@ function renderLiveStatus() {
     var age = Math.max(0, (Date.now() - dataTakenAt) / 1000);
     var live = age <= LIVE_MAX_AGE_S;
     showStatus(live ? 'status.live' : 'status.stale', { age: formatAge(age) }, live ? 'online' : 'stale',
-               t('status.updated_at', { time: new Date(dataTakenAt).toLocaleTimeString(i18nLocale()) }),
-               live ? 'status.live_short' : 'status.stale_short', { age: formatAge(age) });
+               t('status.updated_at', { time: new Date(dataTakenAt).toLocaleTimeString(i18nLocale()) }));
 }
 
 setInterval(renderLiveStatus, 1000);
@@ -870,9 +877,9 @@ function updateDashboard() {
             if (data.error) {
                 statusMode = 'other';
                 if (data.error === 'not yet available') {
-                    showStatus('status.pulling', null, 'loading', '', 'status.pulling_short');
+                    showStatus('status.pulling', null, 'loading', '');
                 } else {
-                    showStatus('common.error', { message: data.error }, 'error', '', 'status.error_short');
+                    showStatus('common.error', { message: data.error }, 'error', '');
                 }
                 // Apply config even on error so UI elements stay visible
                 if (data.config) {
@@ -1049,7 +1056,7 @@ function updateDashboard() {
             // nothing has arrived for a while
             if (!noDataFor(dashboardOkAt)) return;
             statusMode = 'other';
-            showStatus('status.connection_failed', null, 'error', '', 'status.offline_short');
+            showStatus('status.connection_failed', null, 'error', '');
         })
         .finally(function() {
             if (timeoutId) clearTimeout(timeoutId);
@@ -1734,6 +1741,9 @@ function updateClock() {
     if (!el) return;
     var now = new Date();
     el.textContent = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
+    // "Mon 26 Oct", "Пн, 26 жовт." in the dashboard's language
+    var date = now.toLocaleDateString(i18nLocale(), { weekday: 'short', day: 'numeric', month: 'short' });
+    document.getElementById('weather-forecast-date').textContent = date.charAt(0).toUpperCase() + date.slice(1);
     // Next update just after the minute changes
     clearTimeout(clockTimer);
     clockTimer = setTimeout(updateClock, 60000 - now.getSeconds() * 1000 - now.getMilliseconds() + 50);

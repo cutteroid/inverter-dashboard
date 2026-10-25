@@ -158,8 +158,8 @@ html.low-power .header {
     text-overflow: ellipsis;
 }
 
-/* Status pill (app bar, and under the clock in fullscreen): a coloured dot and
-   how old the readings are */
+/* Status pill in the app bar: a coloured dot and how old the readings are
+   (in fullscreen the status is a dot by the date, .status-dot) */
 .status-pill {
     display: inline-flex;
     align-items: center;
@@ -2004,16 +2004,29 @@ body.fullscreen-mode .weather-forecast-clock {
     white-space: nowrap;
 }
 
-body.fullscreen-mode .weather-forecast-clock-block .status-pill {
-    padding: 3px 9px;
-    gap: 6px;
-    font-size: 0.7rem;
+/* Date under the clock, the live status as a dot before it */
+body.fullscreen-mode .weather-forecast-dateline {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
-body.fullscreen-mode .weather-forecast-clock-block .status-pill::before {
-    width: 6px;
-    height: 6px;
+.status-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--slate-400);
 }
+
+.status-dot.online { background: var(--green-400); box-shadow: 0 0 6px rgba(var(--green-400-rgb), 0.8); }
+.status-dot.stale,
+.status-dot.loading { background: var(--amber-400); }
+.status-dot.error { background: var(--red-400); }
 
 body.fullscreen-mode .weather-forecast-current {
     display: flex;
@@ -3466,9 +3479,14 @@ html.low-power .pin-overlay {
         gap: 4px;
     }
 
-    body.fullscreen-mode .weather-forecast-clock-block .status-pill {
-        padding: 1px 7px;
-        font-size: 0.62rem;
+    body.fullscreen-mode .weather-forecast-dateline {
+        gap: 5px;
+        font-size: 0.68rem;
+    }
+
+    body.fullscreen-mode .status-dot {
+        width: 6px;
+        height: 6px;
     }
 
     body.fullscreen-mode .weather-forecast-current {
