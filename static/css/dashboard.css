@@ -2743,6 +2743,12 @@ body.fullscreen-mode.page-scrolled .scroll-hint {
     display: none;
 }
 
+/* The server settings come right before the support section, which has its own
+   line on top: no second line under them */
+.settings-server .settings-section {
+    border-bottom: none;
+}
+
 /* Pinned to the bottom of the panel (stays last if the panel scrolls) */
 .settings-section.settings-donate {
     margin-top: auto;
@@ -2777,7 +2783,7 @@ body.fullscreen-mode.page-scrolled .scroll-hint {
     background: rgba(var(--fg-rgb), 0.2);
 }
 
-/* Donate links: one per author, the name highlighted, its role after it */
+/* Link to the README's Support section */
 .donate-link {
     display: block;
     padding: 4px 0;
@@ -2788,14 +2794,6 @@ body.fullscreen-mode.page-scrolled .scroll-hint {
 }
 .donate-link:hover {
     color: var(--violet-300);
-}
-.donate-role {
-    margin-left: 4px;
-    color: var(--text-dim);
-    font-size: 0.75rem;
-}
-.donate-role::before {
-    content: "· ";
 }
 
 .settings-btn.reset-btn {

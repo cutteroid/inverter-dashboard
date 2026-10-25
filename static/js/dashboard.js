@@ -296,6 +296,18 @@ function closeSettingsPanel() {
     lockServerSettings();
 }
 
+// A click anywhere outside the open panel closes it, and only closes it (the
+// dashboard underneath doesn't react). Not for the settings button (it toggles
+// the panel itself) or the dialogs the panel opens (PIN, configuration editor).
+document.addEventListener('click', function(e) {
+    var panel = document.getElementById('settings-panel');
+    if (!panel || !panel.classList.contains('open')) return;
+    if (e.target.closest('#settings-panel, .settings-toggle-btn, .pin-overlay, .onboarding-overlay, .restart-overlay, .details-overlay')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeSettingsPanel();
+}, true);
+
 function lockServerSettings() {
     document.getElementById('settings-server').classList.add('locked');
 }

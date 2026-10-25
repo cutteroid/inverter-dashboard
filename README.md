@@ -668,7 +668,7 @@ If the dashboard is useful to you, you can support its authors on donatello.to:
 - [Cutteroid](https://donatello.to/Cutteroid): this project
 - [Ivan Ursul](https://donatello.to/IvanUrsul): the original deye-dashboard
 
-The same links are at the bottom of the dashboard's settings panel.
+The "How to support the authors" link at the bottom of the dashboard's settings panel leads here.
 
 ## License
 
