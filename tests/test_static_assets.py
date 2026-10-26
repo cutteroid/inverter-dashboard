@@ -46,7 +46,17 @@ def test_assets_are_served(client):
     for url in _asset_urls(c.get("/").get_data(as_text=True)):
         resp = c.get(url)
         assert resp.status_code == 200, url
-        assert len(resp.data) > 1000
+        assert len(resp.data) > (1000 if url.split("?")[0].endswith((".css", ".js")) else 100), url
+
+
+def test_favicon(client):
+    """Linked from the page, and at /favicon.ico where browsers look by themselves."""
+    c, _ = client
+    html = c.get("/").get_data(as_text=True)
+    for name in ("favicon.ico", "favicon.svg", "apple-touch-icon.png"):
+        assert re.search(r'href="/static/%s\?v=[0-9a-f]{12}"' % re.escape(name), html), name
+    resp = c.get("/favicon.ico")
+    assert resp.status_code == 200 and resp.data[:4] == b"\x00\x00\x01\x00"
 
 
 def test_static_files_have_no_template_syntax(client):

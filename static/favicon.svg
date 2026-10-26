@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- The app bar's bolt (amber) on the card colour of the dark theme -->
+  <rect width="64" height="64" rx="14" fill="#172036"/>
+  <path d="M35.3 10 15.5 36.4h15.4L28.7 54l19.8-26.4H33.1Z" fill="#fbbf24" stroke="#fbbf24" stroke-width="3" stroke-linejoin="round"/>
+</svg>

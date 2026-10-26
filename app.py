@@ -818,6 +818,12 @@ def add_no_cache_headers(response):
     return response
 
 
+@app.route("/favicon.ico")
+def favicon():
+    """Browsers ask for /favicon.ico on their own (the page links the static icons)."""
+    return app.send_static_file("favicon.ico")
+
+
 @app.route("/")
 def index():
     """Serve the dashboard page."""

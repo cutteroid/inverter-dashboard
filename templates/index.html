@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard</title>
+    <!-- The app bar's amber bolt; ICO for older browsers, PNG for the home screen on iOS -->
+    <link rel="icon" href="{{ asset_url('favicon.ico') }}" sizes="16x16 32x32">
+    <link rel="icon" href="{{ asset_url('favicon.svg') }}" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="{{ asset_url('apple-touch-icon.png') }}">
     <link rel="stylesheet" href="{{ asset_url('css/dashboard.css') }}">
     <script>
         // Low power mode is per device; apply it before the first paint
