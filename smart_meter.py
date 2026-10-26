@@ -102,8 +102,15 @@ class SmartMeter:
 
     # ----- MQTT message handling -----
 
-    def handle_message(self, topic, payload):
-        """Apply one MQTT message (topic string, payload bytes/str)."""
+    def handle_message(self, topic, payload, retained=False):
+        """Apply one MQTT message (topic string, payload bytes/str).
+
+        retained: the broker's stored copy, sent on (re)subscribing, not a new
+        message. A retained reading is from whenever the meter last sent it (maybe
+        before an outage it's still in): it must not count as the meter being
+        back, nor as the grid's state now. So retained readings are skipped and a
+        retained relay state is only stored.
+        """
         parts = topic.split("/")
         if len(parts) < 3 or parts[0] != TOPIC_ROOT:
             return
@@ -127,6 +134,8 @@ class SmartMeter:
                 elif online:
                     self._offline_at = None
                 self._online = online
+        elif retained and kind in ("dataJson", "data"):
+            return
         elif kind == "dataJson" and len(parts) == 3:
             self._apply_json(text)
         elif kind == "data" and len(parts) == 4 and parts[3] not in ("set", "get"):
@@ -136,7 +145,8 @@ class SmartMeter:
             if value is not None:
                 with self._lock:
                     self._relays[parts[3]] = int(value)
-                    self._check_grid()
+                    if not retained:
+                        self._check_grid()
 
     def _apply_json(self, text):
         try:
@@ -220,7 +230,9 @@ class SmartMeter:
         if len(dead) == len(volts):
             self.outages.update(TOTAL)
         elif dead or cut:
-            self.outages.update(PARTIAL, missing=dead + cut, cut=cut)
+            # Voltage on every phase but all cut: typically the meter's wait before
+            # switching the house back on after an outage (OutageLog joins it)
+            self.outages.update(PARTIAL, missing=dead + cut, cut=cut, restore=not dead and len(cut) == len(volts))
         else:
             self.outages.update("ok")
 
@@ -439,7 +451,7 @@ class SmartMeterClient:
 
     def _on_message(self, client, userdata, message):
         try:
-            self.meter.handle_message(message.topic, message.payload)
+            self.meter.handle_message(message.topic, message.payload, retained=bool(message.retain))
             parts = message.topic.split("/")
             if len(parts) == 3 and parts[2] == "status" and message.payload.strip().lower() == b"online":
                 # The meter (re)connected: it may be back on its default once-a-minute

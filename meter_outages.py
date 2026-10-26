@@ -11,8 +11,10 @@ SmartMeter calls update() with the condition it sees now; a change closes
 the open outage and/or opens a new one. A partial outage stays one entry while
 any phase is missing (the phases seen missing add up); it ends when all are
 back, or turns into a total outage. Outages under MIN_SECONDS are dropped. The
-open outage is saved too, so a restart during an outage keeps its start.
-Entries from before yesterday are dropped.
+meter's wait before it switches the house back on after an outage (every phase
+disconnected, RESTORE_SECONDS at most) is part of that outage. The open
+outage is saved too, so a restart during an outage keeps its start. Entries
+from before yesterday are dropped.
 """
 import logging
 import threading
@@ -27,6 +29,13 @@ PARTIAL = "partial"
 # Shorter ones aren't kept: the meter sends V1, V2, V3 one by one, so a change
 # of all phases passes through a split second of "some phases missing"
 MIN_SECONDS = 10
+# After the grid returns, the meter keeps every phase disconnected for a while
+# before switching the house back on (seen live: 110 s). A partial outage with
+# every phase cut and voltage on all of them ("restore") that starts as a total
+# one ends is added to it if it lasts up to this long; a longer one is the
+# meter's protection keeping the house off, and an entry of its own.
+RESTORE_SECONDS = 300
+JOIN_GAP_SECONDS = 10
 
 
 def _iso(dt):
@@ -42,10 +51,11 @@ class OutageLog:
         self._open = None  # the outage going on now, same keys without "end"
         self._load()
 
-    def update(self, condition, missing=(), cut=(), at=None):
+    def update(self, condition, missing=(), cut=(), at=None, restore=False):
         """The grid condition now: "ok", PARTIAL (missing: phase numbers, cut: the
-        ones the meter's relay switched off) or TOTAL. at: when it started (for an
-        outage noticed late, e.g. the meter's offline time); default now."""
+        ones the meter's relay switched off; restore: every phase has voltage and
+        every one is cut) or TOTAL. at: when it started (for an outage noticed
+        late, e.g. the meter's offline time); default now."""
         at = at or self.clock()
         changed = False
         with self._lock:
@@ -56,17 +66,25 @@ class OutageLog:
                 if phases != current["phases"] or cut_phases != current["cut"]:
                     current["phases"], current["cut"] = phases, cut_phases
                     changed = True
+                if current.get("restore") and set(missing) - set(cut):
+                    # A phase without voltage: not just the meter's wait any more (its
+                    # relays switching back on one by one keep it one)
+                    current["restore"] = False
+                    changed = True
             elif not current or current["type"] != condition:
                 if current:
                     start = datetime.fromisoformat(current["start"])
-                    if (at - start).total_seconds() >= MIN_SECONDS:
-                        self._events.append(dict(current, end=_iso(max(at, start))))
+                    ended = dict(current, end=_iso(max(at, start)))
+                    if not self._joins_previous(ended, at) and (at - start).total_seconds() >= MIN_SECONDS:
+                        self._events.append(ended)
                     self._open = None
                     changed = True
                 if condition in (TOTAL, PARTIAL):
                     self._open = {"type": condition, "start": _iso(at),
                                   "phases": sorted(set(missing)) if condition == PARTIAL else [],
                                   "cut": sorted(set(cut)) if condition == PARTIAL else []}
+                    if condition == PARTIAL and restore:
+                        self._open["restore"] = True
                     changed = True
             if changed:
                 self._prune()
@@ -78,8 +96,31 @@ class OutageLog:
         one first with "end": None."""
         with self._lock:
             self._prune()
-            events = list(self._events) + ([dict(self._open, end=None)] if self._open else [])
-        return sorted(events, key=lambda e: e["start"], reverse=True)
+            events = list(self._events)
+            current = self._open
+            if current and self._restoring_after(current, self.clock()):
+                events[-1] = dict(events[-1], end=None)   # still the outage: the meter's wait
+                current = None
+            if current:
+                events.append(dict(current, end=None))
+        return sorted(({k: v for k, v in e.items() if k != "restore"} for e in events),
+                      key=lambda e: e["start"], reverse=True)
+
+    def _restoring_after(self, outage, until):
+        """Is this the meter's wait after the last (total) outage, as of until?
+        (caller holds the lock)"""
+        if not outage.get("restore") or not self._events or self._events[-1]["type"] != TOTAL:
+            return False
+        start = datetime.fromisoformat(outage["start"])
+        gap = (start - datetime.fromisoformat(self._events[-1]["end"])).total_seconds()
+        return 0 <= gap <= JOIN_GAP_SECONDS and (until - start).total_seconds() <= RESTORE_SECONDS
+
+    def _joins_previous(self, ended, at):
+        """Add the meter's wait to the outage before it (caller holds the lock)."""
+        if not self._restoring_after(ended, at):
+            return False
+        self._events[-1]["end"] = ended["end"]
+        return True
 
     @property
     def open_type(self):

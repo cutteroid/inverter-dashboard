@@ -164,3 +164,101 @@ def test_split_second_changes_are_not_outages(clock):
     clock.advance(seconds=2)
     volts(m, 230, 231, 229)
     assert m.get_outages()["outages"] == []
+
+
+def test_retained_readings_on_resubscribe_dont_end_an_outage(clock):
+    """Seen live: during an outage the dashboard reconnected to the broker, which
+    sent its stored (retained) pre-outage readings; they ended the outage at
+    23:39 although the grid came back at 00:01."""
+    m = SmartMeter(daily_file=None, clock=clock)
+    volts(m, 230, 231, 229)
+    m.handle_message("buckler/M1/status", "offline")
+    clock.advance(minutes=2)
+    assert m.get_outages()["outages"][0]["end"] is None
+    clock.advance(minutes=36)
+    m.handle_message("buckler/M1/status", "offline", retained=True)
+    m.handle_message("buckler/M1/dataJson", json.dumps({"V": [230, 231, 229]}), retained=True)
+    for i, v in enumerate((230, 231, 229), start=1):
+        m.handle_message(f"buckler/M1/data/V{i}", str(v), retained=True)
+    m.handle_message("buckler/M1/relay/r1", "100", retained=True)
+    clock.advance(minutes=5)
+    out = m.get_outages()["outages"]
+    assert [(e["type"], e["end"]) for e in out] == [("total", None)]
+    volts(m, 228, 230, 231)                           # the meter itself again: back
+    assert m.get_outages()["outages"][0]["end"] == "2026-10-26T12:43:00"
+
+
+def test_client_passes_the_retain_flag():
+    from unittest.mock import MagicMock
+    from smart_meter import SmartMeterClient
+    meter = MagicMock()
+    client = SmartMeterClient(meter, "localhost", interval=0)
+    message = MagicMock(topic="buckler/M1/data/V1", payload=b"230", retain=1)
+    client._on_message(None, None, message)
+    meter.handle_message.assert_called_once_with("buckler/M1/data/V1", b"230", retained=True)
+
+
+def _meter_with_relays(clock):
+    m = SmartMeter(daily_file=None, clock=clock)
+    volts(m, 230, 231, 229)
+    for r in (1, 2, 3):
+        m.handle_message(f"buckler/M1/relay/r{r}", "100")
+    return m
+
+
+def _boot_with_relays_off(m):
+    """The meter is back after an outage: voltage on all phases, every relay still off."""
+    m.handle_message("buckler/M1/dataJson", json.dumps({"V": [230, 231, 229], "relay": [0, 0, 0]}))
+
+
+def _relays_on(m):
+    for r in (1, 2, 3):
+        m.handle_message(f"buckler/M1/relay/r{r}", "100")
+
+
+def test_the_meter_waiting_to_switch_back_on_is_part_of_the_outage(clock):
+    """Seen live: a total outage, then ~110 s with every phase cut before the meter
+    switches the house back on. One "No grid" entry up to the switch-on."""
+    m = _meter_with_relays(clock)
+    m.handle_message("buckler/M1/status", "offline")
+    clock.advance(minutes=60)
+    m.check_offline()                                 # the 15 s check has opened the outage
+    _boot_with_relays_off(m)
+    clock.advance(seconds=60)
+    # While it waits: still the running outage
+    assert [(e["type"], e["end"]) for e in m.get_outages()["outages"]] == [("total", None)]
+    clock.advance(seconds=50)
+    _relays_on(m)
+    out = m.get_outages()["outages"]
+    assert out == [{"type": "total", "start": "2026-10-26T12:00:00", "end": "2026-10-26T13:01:50",
+                    "phases": [], "cut": []}]
+
+
+def test_a_long_wait_is_the_meters_protection_and_its_own_entry(clock):
+    """Every phase kept off for longer than RESTORE_SECONDS (e.g. the voltage out
+    of range after the outage): a partial entry after the "No grid" one."""
+    m = _meter_with_relays(clock)
+    m.handle_message("buckler/M1/status", "offline")
+    clock.advance(minutes=60)
+    m.check_offline()                                 # the 15 s check has opened the outage
+    _boot_with_relays_off(m)
+    clock.advance(minutes=24)
+    out = m.get_outages()["outages"]
+    assert [(e["type"], e["start"][11:16], e["end"] and e["end"][11:16]) for e in out] == [
+        ("partial", "13:00", None), ("total", "12:00", "13:00")]
+    _relays_on(m)
+    out = m.get_outages()["outages"]
+    assert [(e["type"], e["end"][11:16], e["cut"]) for e in out] == [
+        ("partial", "13:24", [1, 2, 3]), ("total", "13:00", [])]
+
+
+def test_all_phases_cut_without_an_outage_before_is_partial(clock):
+    m = _meter_with_relays(clock)
+    clock.advance(minutes=5)
+    for r in (1, 2, 3):
+        m.handle_message(f"buckler/M1/relay/r{r}", "0")
+    clock.advance(minutes=2)
+    _relays_on(m)
+    out = m.get_outages()["outages"]
+    assert [(e["type"], e["cut"]) for e in out] == [("partial", [1, 2, 3])]
+    assert "restore" not in out[0]
