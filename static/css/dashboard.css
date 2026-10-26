@@ -2462,6 +2462,22 @@ body.fullscreen-mode .alerts-banner .alerts-map-zoomed svg {
     display: none;
 }
 
+/* The card's header: the region on a line of its own under the title (beside
+   it, "Повітряні тривоги · Київська область" wraps in a card). Two 18px lines
+   are exactly the icon chip's 36px, so the header and its icon sit where they
+   do in every other card. */
+#alerts-card .card-header h2 {
+    line-height: 18px;
+}
+
+#alerts-card .alerts-region-name {
+    display: block;
+}
+
+#alerts-card .alerts-region-name::before {
+    content: none;
+}
+
 .alerts-demo-badge,
 .meter-demo-badge {
     margin-left: auto;
