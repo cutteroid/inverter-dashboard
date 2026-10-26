@@ -189,7 +189,9 @@
     "empty": "No outages today or yesterday",
     "total": "No grid",
     "no_voltage": "{phases}: no voltage from the grid",
+    "no_voltage_short": "{phases}: no grid",
     "cut": "{phases}: disconnected by the meter",
+    "cut_short": "{phases}: cut by meter",
     "since": "since {time}",
     "more": "Today and yesterday: all {count}",
     "dialog_sub": "Today and yesterday"

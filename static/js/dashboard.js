@@ -2013,13 +2013,17 @@ function outageEnd(o) {
 
 // What was missing: "No grid", or which phases had no voltage from the grid
 // and which the meter disconnected
-function outageKind(o) {
+// long: the full wording, for the tooltip ("L2: no voltage from the grid");
+// else short for the row ("L2: no grid", "L1–L3: cut by meter")
+function outageKind(o, long) {
     if (o.type === 'total') return t('outage_log.total');
-    var label = function(list) { return list.map(function(p) { return 'L' + p; }).join(', '); };
+    var label = function(list) {
+        return list.length === 3 ? 'L1–L3' : list.map(function(p) { return 'L' + p; }).join(', ');
+    };
     var dead = o.phases.filter(function(p) { return o.cut.indexOf(p) === -1; });
     var parts = [];
-    if (dead.length) parts.push(t('outage_log.no_voltage', { phases: label(dead) }));
-    if (o.cut.length) parts.push(t('outage_log.cut', { phases: label(o.cut) }));
+    if (dead.length) parts.push(t(long ? 'outage_log.no_voltage' : 'outage_log.no_voltage_short', { phases: label(dead) }));
+    if (o.cut.length) parts.push(t(long ? 'outage_log.cut' : 'outage_log.cut_short', { phases: label(o.cut) }));
     return parts.join(' · ');
 }
 
@@ -2027,12 +2031,12 @@ function outageRow(o, showDay) {
     var start = new Date(o.start), end = outageEnd(o);
     var time = o.end ? clockText(start.getTime() / 1000) + '–' + clockText(end.getTime() / 1000)
                      : t('outage_log.since', { time: clockText(start.getTime() / 1000) });
-    var kind = (showDay && o.start.slice(0, 10) !== outageLogData.today ? t('outage_log.yesterday') + ' · ' : '') +
-        outageKind(o);
+    var day = showDay && o.start.slice(0, 10) !== outageLogData.today ? t('outage_log.yesterday') + ' · ' : '';
     return '<div class="outage-row outage-' + o.type + (o.end ? '' : ' outage-now') + '">' +
         '<span class="outage-dot"></span>' +
         '<div class="outage-main"><span class="outage-time">' + escapeHtml(time) + '</span>' +
-        '<span class="outage-kind" title="' + escapeHtml(kind) + '">' + escapeHtml(kind) + '</span></div>' +
+        '<span class="outage-kind" title="' + escapeHtml(day + outageKind(o, true)) + '">' +
+        escapeHtml(day + outageKind(o)) + '</span></div>' +
         '<span class="outage-duration">' + escapeHtml(outageDuration(end - start)) + '</span></div>';
 }
 

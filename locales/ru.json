@@ -189,7 +189,9 @@
     "empty": "Сегодня и вчера отключений не было",
     "total": "Нет сети",
     "no_voltage": "{phases}: нет напряжения в сети",
+    "no_voltage_short": "{phases}: нет сети",
     "cut": "{phases}: отключено счётчиком",
+    "cut_short": "{phases}: отключил счётчик",
     "since": "с {time}",
     "more": "Сегодня и вчера: все {count}",
     "dialog_sub": "Сегодня и вчера"
