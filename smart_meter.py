@@ -33,6 +33,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 
+from meter_outages import PARTIAL, TOTAL, OutageLog
 from storage import atomic_write_json, data_path, load_json
 
 logger = logging.getLogger(__name__)
@@ -74,11 +75,17 @@ class SmartMeter:
 
     ENERGY_KEYS = ("posWh", "negWh")
 
-    def __init__(self, serial_filter=None, daily_file="smart_meter_daily.json", clock=datetime.now, demo=False):
+    def __init__(self, serial_filter=None, daily_file="smart_meter_daily.json", clock=datetime.now, demo=False,
+                 outages_file=None):
         self.serial_filter = serial_filter or None
         self.daily_file = daily_file  # None: keep today's baseline in memory only
         self.clock = clock
         self.demo = demo
+        # Grid outages it sees (today and yesterday); outages_file None: in memory only
+        self.outages = OutageLog(outages_file, clock=clock)
+        # () -> True / False / None: does the inverter have the grid now? Set by the
+        # app; tells a real outage from the meter only losing its Wi-Fi
+        self.grid_online_hint = None
         self._lock = threading.Lock()
         # Energy counters at the start of today: {"date": "YYYY-MM-DD", "posWh": .., "negWh": ..}
         daily = load_json(daily_file, {}) if daily_file else {}
@@ -129,6 +136,7 @@ class SmartMeter:
             if value is not None:
                 with self._lock:
                     self._relays[parts[3]] = int(value)
+                    self._check_grid()
 
     def _apply_json(self, text):
         try:
@@ -158,6 +166,8 @@ class SmartMeter:
             self._updated = self.clock()
             self._mark_online()
             self._track_energy()
+            if "V" in updates or relays:
+                self._check_grid()
 
     def _apply_field(self, field, text):
         value = _number(text)
@@ -178,14 +188,66 @@ class SmartMeter:
             self._mark_online()
             if field.startswith(self.ENERGY_KEYS):
                 self._track_energy()
+            if (m and m.group(1) == "V") or field == "V":
+                self._check_grid()
 
     def _mark_online(self):
         """It just sent data, whatever the last status said (caller holds the lock)."""
         if self._online is False and self._offline_at is not None:
             logger.info("Smart meter: sending data again %.0fs after reporting offline",
                         (self.clock() - self._offline_at).total_seconds())
+        if self._online is False and self.outages.open_type == TOTAL:
+            # Back after an outage it was offline for; its voltages (next readings)
+            # tell whether a phase is still missing
+            self.outages.update("ok")
         self._online = True
         self._offline_at = None
+
+    # ----- outages -----
+
+    def _check_grid(self):
+        """Log the grid condition by the latest voltages and relays (caller holds
+        the lock). All phases without voltage: total; some without voltage, or cut
+        by the meter's relay (three-phase meters with r1..r3 = L1..L3): partial."""
+        volts = self._values.get("V") or []
+        if not volts or any(v is None for v in volts):
+            return  # not all phases read yet
+        dead = [i + 1 for i, v in enumerate(volts) if v < PHASE_ON_MIN_VOLTAGE]
+        relays = [self._relays.get(f"r{i + 1}") for i in range(len(volts))]
+        cut = []
+        if len(volts) == 1 or len(self._relays) == 3:
+            cut = [i + 1 for i, r in enumerate(relays) if r == 0 and i + 1 not in dead]
+        if len(dead) == len(volts):
+            self.outages.update(TOTAL)
+        elif dead or cut:
+            self.outages.update(PARTIAL, missing=dead + cut, cut=cut)
+        else:
+            self.outages.update("ok")
+
+    def check_offline(self):
+        """Offline for OFFLINE_GRACE: the meter (powered by the grid) has no grid,
+        so a total outage from when it went offline. Unless the inverter still has
+        the grid: then the meter only lost its connection. Runs every few seconds
+        (SmartMeterClient) and on each outage log request."""
+        with self._lock:
+            offline_at = self._offline_at
+            offline = (self._online is False and offline_at is not None
+                       and self.clock() - offline_at >= OFFLINE_GRACE)
+        if not offline or self.outages.open_type == TOTAL:
+            return
+        hint = self.grid_online_hint() if self.grid_online_hint else None
+        if hint is True:
+            return
+        self.outages.update(TOTAL, at=offline_at)
+
+    def get_outages(self):
+        """Outage log for the API: today's and yesterday's outages, newest first."""
+        self.check_offline()
+        result = {"status": "ok", "now": self.clock().isoformat(timespec="seconds"),
+                  "today": self.clock().strftime("%Y-%m-%d"), "outages": self.outages.snapshot()}
+        if self.demo:
+            result["demo"] = True
+        return result
 
     def set_broker_state(self, connected, error=None):
         with self._lock:
@@ -347,6 +409,16 @@ class SmartMeterClient:
             logger.warning("Smart meter: MQTT connect to %s:%s failed: %s", self.host, self.port, e)
             self.meter.set_broker_state(False, f"Cannot connect to MQTT broker {self.host}:{self.port}")
         client.loop_start()  # handles reconnects
+        threading.Thread(target=self._watch_offline, name="smart-meter-outages", daemon=True).start()
+
+    def _watch_offline(self):
+        """An outage the meter goes offline for sends nothing more: notice it."""
+        while True:
+            time.sleep(15)
+            try:
+                self.meter.check_offline()
+            except Exception:
+                logger.exception("Smart meter: outage check failed")
 
     def _on_connect(self, client, userdata, flags, reason_code, properties):
         if reason_code.is_failure:
@@ -487,6 +559,10 @@ def default_daily_file():
     return data_path("smart_meter_daily.json")
 
 
+def default_outages_file():
+    return data_path("meter_outages.json")
+
+
 def create_smart_meter_from_env(environ=os.environ):
     """(SmartMeter, SmartMeterClient) when SMART_METER_ENABLED, else (None, None).
 
@@ -508,7 +584,8 @@ def create_smart_meter_from_env(environ=os.environ):
     except ValueError:
         interval = 10
     meter = SmartMeter(serial_filter=environ.get("SMART_METER_SERIAL") or None,
-                       daily_file=environ.get("SMART_METER_DAILY_FILE") or default_daily_file())
+                       daily_file=environ.get("SMART_METER_DAILY_FILE") or default_daily_file(),
+                       outages_file=environ.get("SMART_METER_OUTAGES_FILE") or default_outages_file())
     client = SmartMeterClient(
         meter,
         host=environ.get("SMART_METER_MQTT_HOST") or default_broker_host(),

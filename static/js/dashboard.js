@@ -118,6 +118,7 @@ function refreshTranslatedContent() {
         function() { renderOutageReadiness(); },
         function() { renderSparklines(); renderHistoryDetails(); },
         function() { updateClock(); },
+        function() { renderOutageLog(); },
         function() { renderCardSettings(); },
         function() { updateDashboard(); },
     ];
@@ -384,6 +385,7 @@ function returnToTop() {
     if (document.body.classList.contains('cards-dragging')) { scheduleReturnToTop(); return; }
     returningToTop = true;
     closeHistoryDetails();
+    closeOutageLog();
     window.scrollTo({ top: 0, behavior: isLowPower() ? 'auto' : 'smooth' });
     setTimeout(function() { returningToTop = false; }, 1500);
 }
@@ -1972,6 +1974,135 @@ function renderSmartMeter() {
 
 fetchSmartMeter();
 setInterval(fetchSmartMeter, SMART_METER_POLL_MS);
+
+// ===== OUTAGE HISTORY =====
+// Grid outages the smart meter saw today and yesterday (/api/meter-outages,
+// meter_outages.py): total (no grid) or partial (phases with no voltage from
+// the grid, or disconnected by the meter's relay). The card lists the latest
+// OUTAGE_LOG_ROWS (one line each); the rest of today and yesterday is in a
+// dialog. An outage over midnight is in both days there, marked "Yesterday"
+// under today.
+var OUTAGE_LOG_POLL_MS = 30000;
+var OUTAGE_LOG_ROWS = 5;
+var outageLogData = null;
+var outageLogAt = 0;   // when it arrived: running outages count on from the server's "now"
+
+function fetchOutageLog() {
+    apiFetch('/api/meter-outages')
+        .then(function(r) { return r.json(); })
+        .then(function(data) { outageLogData = data; outageLogAt = Date.now(); renderOutageLog(); })
+        .catch(function() {});   // keep the last list through a failed request
+}
+
+function outageLogNow() {
+    return new Date(new Date(outageLogData.now).getTime() + (Date.now() - outageLogAt));
+}
+
+// 45 s, 12m, 1h 20m
+function outageDuration(ms) {
+    var s = Math.max(0, Math.round(ms / 1000));
+    if (s < 60) return t('duration.s', { s: s });
+    var m = Math.round(s / 60);
+    if (m < 60) return t('duration.m', { m: m });
+    return m % 60 ? t('duration.hm', { h: Math.floor(m / 60), m: m % 60 }) : t('duration.h', { h: m / 60 });
+}
+
+function outageEnd(o) {
+    return o.end ? new Date(o.end) : outageLogNow();
+}
+
+// What was missing: "No grid", or which phases had no voltage from the grid
+// and which the meter disconnected
+function outageKind(o) {
+    if (o.type === 'total') return t('outage_log.total');
+    var label = function(list) { return list.map(function(p) { return 'L' + p; }).join(', '); };
+    var dead = o.phases.filter(function(p) { return o.cut.indexOf(p) === -1; });
+    var parts = [];
+    if (dead.length) parts.push(t('outage_log.no_voltage', { phases: label(dead) }));
+    if (o.cut.length) parts.push(t('outage_log.cut', { phases: label(o.cut) }));
+    return parts.join(' · ');
+}
+
+function outageRow(o, showDay) {
+    var start = new Date(o.start), end = outageEnd(o);
+    var time = o.end ? clockText(start.getTime() / 1000) + '–' + clockText(end.getTime() / 1000)
+                     : t('outage_log.since', { time: clockText(start.getTime() / 1000) });
+    var kind = (showDay && o.start.slice(0, 10) !== outageLogData.today ? t('outage_log.yesterday') + ' · ' : '') +
+        outageKind(o);
+    return '<div class="outage-row outage-' + o.type + (o.end ? '' : ' outage-now') + '">' +
+        '<span class="outage-dot"></span>' +
+        '<div class="outage-main"><span class="outage-time">' + escapeHtml(time) + '</span>' +
+        '<span class="outage-kind" title="' + escapeHtml(kind) + '">' + escapeHtml(kind) + '</span></div>' +
+        '<span class="outage-duration">' + escapeHtml(outageDuration(end - start)) + '</span></div>';
+}
+
+// The outages of one day (today 0, yesterday 1) and the time without power in
+// it (an outage over midnight counts in both days)
+function outageDay(back) {
+    var now = outageLogNow();
+    var from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - back);
+    var to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 1);
+    var list = outageLogData.outages.filter(function(o) { return new Date(o.start) < to && outageEnd(o) > from; });
+    var ms = list.reduce(function(sum, o) {
+        return sum + Math.min(outageEnd(o), to) - Math.max(new Date(o.start), from);
+    }, 0);
+    return { list: list, ms: ms };
+}
+
+function outageDaySummary(key, day) {
+    return '<strong>' + escapeHtml(t(key)) + '</strong> · ' + escapeHtml(day.list.length
+        ? t('outage_log.count', { count: day.list.length }) + ' · ' + t('outage_log.without', { duration: outageDuration(day.ms) })
+        : t('outage_log.none'));
+}
+
+function renderOutageLog() {
+    var card = document.getElementById('outage-log-card');
+    if (!card || !outageLogData) return;
+    if (outageLogData.status !== 'ok') {
+        card.style.display = 'none';
+        return;
+    }
+    card.style.display = '';
+    document.getElementById('outage-log-demo').hidden = !outageLogData.demo;
+    var outages = outageLogData.outages;
+    document.getElementById('outage-log-summary').innerHTML = outageDaySummary('outage_log.today', outageDay(0));
+    document.getElementById('outage-log-list').innerHTML = outages.length
+        ? outages.slice(0, OUTAGE_LOG_ROWS).map(function(o) { return outageRow(o, true); }).join('')
+        : '<div class="outage-log-empty">' + escapeHtml(t('outage_log.empty')) + '</div>';
+    var more = document.getElementById('outage-log-more');
+    more.hidden = outages.length <= OUTAGE_LOG_ROWS;
+    more.textContent = t('outage_log.more', { count: outages.length });
+    if (!document.getElementById('outage-log-overlay').hidden) renderOutageLogDays();
+}
+
+function renderOutageLogDays() {
+    document.getElementById('outage-log-days').innerHTML = [['outage_log.today', 0], ['outage_log.yesterday', 1]].map(function(d) {
+        var day = outageDay(d[1]);
+        return '<div class="outage-log-day"><div class="outage-log-summary">' + outageDaySummary(d[0], day) + '</div>' +
+            day.list.map(function(o) { return outageRow(o, d[1] === 0); }).join('') + '</div>';
+    }).join('');
+}
+
+function openOutageLog() {
+    renderOutageLogDays();
+    document.getElementById('outage-log-overlay').hidden = false;
+    document.getElementById('outage-log-dialog').focus();
+}
+
+function closeOutageLog() {
+    var overlay = document.getElementById('outage-log-overlay');
+    if (overlay) overlay.hidden = true;
+}
+
+(function() {
+    var overlay = document.getElementById('outage-log-overlay');
+    if (!overlay) return;
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) closeOutageLog(); });
+    document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeOutageLog(); });
+})();
+
+fetchOutageLog();
+setInterval(fetchOutageLog, OUTAGE_LOG_POLL_MS);
 
 // ===== AIR RAID ALERTS =====
 // Map of Ukraine's regions (static/data/ukraine-regions.json, ids are ISO 3166-2

@@ -36,6 +36,7 @@ COPY locales/ ./locales/
 COPY storage.py .
 COPY air_alerts.py .
 COPY smart_meter.py .
+COPY meter_outages.py .
 COPY outage_readiness.py .
 COPY history.py .
 COPY setup.py .

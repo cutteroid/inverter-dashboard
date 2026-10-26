@@ -179,6 +179,21 @@
     "basis": "Average load ~{power} W · down to {soc}%",
     "charged_by_start": "Charged to ~{soc}% by the start"
   },
+  "outage_log": {
+    "title": "Outage history",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "count": "Outages: {count}",
+    "without": "{duration} without power",
+    "none": "No outages",
+    "empty": "No outages today or yesterday",
+    "total": "No grid",
+    "no_voltage": "{phases}: no voltage from the grid",
+    "cut": "{phases}: disconnected by the meter",
+    "since": "since {time}",
+    "more": "Today and yesterday: all {count}",
+    "dialog_sub": "Today and yesterday"
+  },
   "alerts": {
     "title": "Air raid alerts",
     "demo": "Demo data",

@@ -606,6 +606,8 @@ def init_services():
     power_history = PowerHistory(POWER_HISTORY_FILE)
     inverter_poller = InverterPoller(inverter, cache_file=INVERTER_CACHE_FILE, history=power_history)
     inverter_poller.start()
+    if smart_meter is not None:
+        smart_meter.grid_online_hint = inverter_grid_online
 
 
 
@@ -953,6 +955,23 @@ def get_smart_meter():
     if smart_meter is None:
         return jsonify({"status": "disabled"})
     return jsonify(smart_meter.get_status())
+
+
+@app.route("/api/meter-outages")
+def get_meter_outages():
+    """Grid outages the smart meter saw today and yesterday (meter_outages.py)."""
+    if smart_meter is None:
+        return jsonify({"status": "disabled"})
+    return jsonify(smart_meter.get_outages())
+
+
+def inverter_grid_online():
+    """Does the inverter have the grid now (fresh readings only)? None: unknown."""
+    data = inverter_poller.data if inverter_poller else None
+    if not data or data.get("error") or InverterPoller._age(data) > 120:
+        return None
+    online = data.get("grid_online")
+    return online if isinstance(online, bool) else None
 
 
 @app.route("/api/alerts")

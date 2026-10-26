@@ -576,6 +576,19 @@
             </div>
         </div>
 
+        <!-- Outage history: grid outages the smart meter saw today and yesterday
+             (/api/meter-outages, renderOutageLog). Hidden without the meter -->
+        <div class="card" id="outage-log-card" data-id="outage-log-card" style="display: none;">
+            <div class="card-header">
+                <span class="icon icon-chip chip-orange" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg></span>
+                <h2 data-i18n="outage_log.title">Outage history</h2>
+                <span class="meter-demo-badge" id="outage-log-demo" data-i18n="meter.demo" hidden>Demo data</span>
+            </div>
+            <div class="outage-log-summary" id="outage-log-summary"></div>
+            <div class="outage-log-list" id="outage-log-list"></div>
+            <button type="button" class="outage-log-more" id="outage-log-more" onclick="openOutageLog()" hidden></button>
+        </div>
+
     </div>
 
     <!-- Settings Panel -->
@@ -899,6 +912,21 @@
             <div class="details-readout" id="details-readout"></div>
             <svg class="details-chart" id="details-chart" viewBox="0 0 600 220" aria-hidden="true"></svg>
             <div class="details-stats" id="details-stats"></div>
+        </div>
+    </div>
+
+    <!-- The whole outage log (today and yesterday), from the outage history card -->
+    <div class="details-overlay" id="outage-log-overlay" hidden>
+        <div class="details-dialog" id="outage-log-dialog" role="dialog" aria-modal="true" aria-labelledby="outage-log-dialog-title" tabindex="-1">
+            <div class="details-header">
+                <span class="icon-chip chip-orange" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg></span>
+                <div class="details-heading">
+                    <h3 id="outage-log-dialog-title" data-i18n="outage_log.title">Outage history</h3>
+                    <span class="details-sub" data-i18n="outage_log.dialog_sub">Today and yesterday</span>
+                </div>
+                <button type="button" class="close-btn" onclick="closeOutageLog()" aria-label="Close" data-i18n-attr="aria-label:common.close">&times;</button>
+            </div>
+            <div class="outage-log-days" id="outage-log-days"></div>
         </div>
     </div>
 

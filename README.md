@@ -276,7 +276,7 @@ The container mounts a `data` volume at `/app/data`. Everything the dashboard st
 - Phase statistics (`phase_stats.json`)
 - Grid import log, generator log, last inverter readings, detected inverter model (`grid_daily_log.json`, `generator_log.json`, `inverter_cache.json`, `inverter_config.json`)
 - Telegram bot state and battery reports (`bot_state.json`, `battery_reports/`)
-- Smart meter daily counter (`smart_meter_daily.json`) and Mosquitto broker files (`mosquitto/`)
+- Smart meter daily counter (`smart_meter_daily.json`), its outage log (`meter_outages.json`) and Mosquitto broker files (`mosquitto/`)
 
 Without a `data` folder (plain installs) the files are kept next to the app, as before. Each path can be overridden with its `*_FILE` variable.
 
@@ -387,6 +387,8 @@ All three are also in Settings → Edit configuration, step 4 ("Air raid alerts"
 ### Smart Meter (optional)
 
 The **Smart meter** card shows live readings from a [Bakler](https://www.bakler.com.ua/) Wi-Fi electricity meter: current power, voltage and current (a per-phase table for three-phase meters, where a phase below 100 V is shown as "No voltage"), mains frequency and the relay state. When the meter or the broker is unavailable, a badge says so (Waiting for data / Meter offline / No recent data / MQTT broker unavailable) and the last known readings are dimmed. The relay is shown only; the dashboard never switches it.
+
+With the meter, an **Outage history** card lists the grid outages it saw today and yesterday, newest first, with start, end and duration (a running one counts on). **No grid**: every phase without voltage, or the meter went offline (it's powered by the grid) for 90 s while the inverter doesn't see the grid either; if the inverter still has the grid, the meter only lost its Wi-Fi and nothing is logged. **Partial**: some phases missing, each marked as *no voltage from the grid* or *disconnected by the meter* (its relay, e.g. the overvoltage protection; three-phase meters with one relay per phase). The card shows the latest five, with today's count and time without power; the rest of today and yesterday is one tap away. Outages under 10 s aren't kept; older days are dropped. Kept in `data/meter_outages.json`.
 
 The meter talks MQTT: it connects to a broker and publishes its readings there ([MQTT docs, in Ukrainian](https://www.bakler.com.ua/setting-mqtt-client/)). `docker compose` starts a Mosquitto broker (`inverter-mosquitto`, port 1883) next to the dashboard.
 

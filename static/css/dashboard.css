@@ -3317,6 +3317,117 @@ button.onboarding-toggle {
     font-weight: 600;
 }
 
+/* Outage history card and its dialog (renderOutageLog): one row per outage,
+   a dot in its colour (red: no grid, amber: phases missing); a running one
+   is highlighted */
+.outage-log-summary {
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.outage-log-summary strong {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.outage-row {
+    --outage-rgb: var(--amber-400-rgb);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.outage-row.outage-total {
+    --outage-rgb: var(--red-400-rgb);
+}
+
+.outage-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgb(var(--outage-rgb));
+}
+
+.outage-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.outage-time {
+    font-size: 0.95rem;
+    font-weight: 600;
+    /* Proportional digits: a tabular "1" is as wide as an "8" and sits with a
+       gap before it, so a time starting with 1 looked indented next to the
+       line below */
+    font-variant-numeric: proportional-nums;
+}
+
+.outage-kind {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+/* The card keeps every row to one line (full text in the tooltip and the dialog) */
+#outage-log-card .outage-kind {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.outage-duration {
+    flex-shrink: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.outage-row.outage-now {
+    margin: 2px -10px;
+    padding: 8px 10px;
+    border-bottom: none;
+    border-radius: 10px;
+    background: rgba(var(--outage-rgb), 0.12);
+}
+
+.outage-row.outage-now .outage-time,
+.outage-row.outage-now .outage-duration {
+    color: rgb(var(--outage-rgb));
+}
+
+.outage-log-empty {
+    padding: 12px 0;
+    font-size: 0.9rem;
+    color: var(--text-dim);
+}
+
+.outage-log-more {
+    margin-top: 10px;
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: 0.85rem;
+    color: var(--indigo-300);
+    cursor: pointer;
+}
+
+.outage-log-more[hidden] {
+    display: none;
+}
+
+.outage-log-days {
+    margin-top: 16px;
+}
+
+.outage-log-day + .outage-log-day {
+    margin-top: 20px;
+}
+
 /* Settings PIN prompt */
 .pin-overlay {
     position: fixed;
