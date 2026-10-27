@@ -101,6 +101,8 @@ class SmartMeter:
         self._daily = daily if isinstance(daily, dict) and "date" in daily else {}
         self._last_totals = {}  # latest counter totals, for the next day's baseline
         self._serial = None
+        self._serial_live = False  # _serial sent a live message (else only retained ones so far)
+        self._retained = {}     # serial -> {topic: payload}: other meters' stored messages, see handle_message
         self._online = None     # from the status topic; any data message sets it True
         self._offline_at = None  # when it last reported offline (and sent no data since)
         self._values = {}       # field -> list of numbers (len 1 or 3)
@@ -124,6 +126,7 @@ class SmartMeter:
         if len(parts) < 3 or parts[0] != TOPIC_ROOT:
             return
         serial = parts[1]
+        replay = {}
         with self._lock:
             if self.serial_filter and serial != self.serial_filter:
                 return
@@ -131,7 +134,26 @@ class SmartMeter:
                 self._serial = serial
                 logger.info("Smart meter: receiving data from %s", serial)
             elif serial != self._serial:
-                return  # first meter wins; set SMART_METER_SERIAL to pick another
+                if self._serial_live:
+                    return  # first meter wins; set SMART_METER_SERIAL to pick another
+                if retained:
+                    # Kept in case this one turns out to be the live meter
+                    self._retained.setdefault(serial, {})[topic] = payload
+                    return
+                # The broker keeps a meter's last messages, also of one that is
+                # gone: a meter heard only from those gives way to a live one,
+                # with this one's stored messages applied first
+                logger.info("Smart meter: %s is live, %s only had stored messages: using %s",
+                            serial, self._serial, serial)
+                self._serial = serial
+                self._online = self._offline_at = None
+                self._relays = {}
+                replay = self._retained.get(serial, {})
+            if not retained:
+                self._serial_live = True
+                self._retained = {}
+        for stored_topic, stored_payload in replay.items():
+            self.handle_message(stored_topic, stored_payload, retained=True)
         text = payload.decode("utf-8", "replace") if isinstance(payload, (bytes, bytearray)) else str(payload)
         kind = parts[2]
         if kind == "status" and len(parts) == 3:
@@ -293,9 +315,14 @@ class SmartMeter:
             return
         today = self.clock().strftime("%Y-%m-%d")
         changed = False
-        if self._daily.get("date") != today:
-            previous = self._last_totals  # last reading of the previous day, if any
+        other_meter = self._daily.get("serial") not in (None, self._serial)
+        if self._daily.get("date") != today or other_meter:
+            # Another meter's counters aren't a baseline: start from this reading
+            previous = {} if other_meter else self._last_totals  # last reading of the previous day, if any
             self._daily = {"date": today, **{k: previous.get(k, v) for k, v in totals.items()}}
+            changed = True
+        if self._daily.get("serial") != self._serial:
+            self._daily["serial"] = self._serial
             changed = True
         for key, total in totals.items():
             if key not in self._daily or total < self._daily[key]:  # new counter / reset meter

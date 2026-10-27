@@ -248,7 +248,7 @@ class InverterPoller:
             result = self.inverter.read_all_data()
             elapsed = time.time() - t0
 
-            if result.get("error"):
+            if "error" in result:
                 logger.warning("Inverter poll returned error after %.1fs: %s", elapsed, result["error"])
             else:
                 logger.info("Inverter poll OK in %.1fs (PV=%dW load=%dW grid=%dW)",
@@ -259,7 +259,7 @@ class InverterPoller:
 
             result["last_updated"] = datetime.now().isoformat()
             result["timestamp"] = time.time()   # for the age: unaffected by DST changes
-            if result.get("error"):
+            if "error" in result:
                 # A single failed poll (the logger is often briefly busy) keeps the
                 # last good readings; the error only replaces them once they're
                 # older than INVERTER_CACHE_MAX_AGE
@@ -461,8 +461,10 @@ def load_cached_inverter_config():
 
 
 def initial_inverter_config():
-    """Config to start with immediately: env, else last detected, else defaults."""
-    cached = None if env_config_complete() else load_cached_inverter_config()
+    """Config to start with immediately: env, else last detected, else defaults.
+    The last detected model is used even when env sets every capability: it
+    selects HV scaling before the device type is read again."""
+    cached = load_cached_inverter_config()
     if cached:
         logger.info("Using last detected inverter config: %s", cached.to_dict())
     return apply_env_overrides(cached or InverterConfig())
@@ -484,6 +486,10 @@ def refresh_inverter_config(inv, config):
         # The model register didn't answer this time: keep the model already known
         detected.device_type, detected.family = config.device_type, config.family
         detected.supported = config.supported
+    if config.has_generator and not detected.has_generator:
+        # Detection only sees a generator while it runs: one found before stays
+        # (INVERTER_HAS_GENERATOR=false turns it off)
+        detected.has_generator = True
     try:
         atomic_write_json(INVERTER_CONFIG_FILE, detected.to_dict())
     except OSError:
@@ -496,14 +502,45 @@ def refresh_inverter_config(inv, config):
 
 
 def refresh_device_type(inv, config):
-    """Read only the device type (capabilities all set in env, so no full detection)."""
+    """Read only the device type and save it for the next start (capabilities all
+    set in env, so no full detection; or a retry, see detect_inverter())."""
     try:
         device_type, family = inv.read_device_type()
-        if family != "unknown" or device_type is not None:
-            config.device_type, config.family = device_type, family
-            config.supported = inv.family_supported(family)
     except Exception:
         logger.exception("Device type check failed, keeping %s", config.to_dict())
+        return
+    if family == "unknown" and device_type is None:
+        return   # no answer: keep what is known
+    config.device_type, config.family = device_type, family
+    config.supported = inv.family_supported(family)
+    cached = load_cached_inverter_config() or InverterConfig(**config.to_dict())
+    cached.device_type, cached.family, cached.supported = config.device_type, config.family, config.supported
+    try:
+        atomic_write_json(INVERTER_CONFIG_FILE, cached.to_dict())
+    except OSError:
+        logger.exception("Could not save the inverter model")
+
+
+# A model still unknown after detection (the logger was busy) is asked again,
+# later each time: it selects the HV scaling
+DEVICE_TYPE_RETRY_SECONDS = (30, 60, 120, 300, 600)
+
+
+def detect_inverter(inv, config):
+    """The inverter-detect thread: full auto-detect, or (all capabilities set in
+    env) just the device type, which selects HV scaling and flags unsupported
+    inverters; then retries for a model still unknown."""
+    if env_config_complete():
+        refresh_device_type(inv, config)
+    else:
+        refresh_inverter_config(inv, config)
+    for delay in DEVICE_TYPE_RETRY_SECONDS:
+        if config.family != "unknown" or config.device_type is not None:
+            return
+        time.sleep(delay)
+        refresh_device_type(inv, config)
+    if config.family == "unknown" and config.device_type is None:
+        logger.warning("Inverter model unknown (no answer to the device type read): no HV scaling")
 
 
 # Service variables — initialised by init_services() when configured
@@ -595,10 +632,8 @@ def init_services():
     inverter = create_inverter(os.environ)
     inverter_config = initial_inverter_config()
     inverter.config = inverter_config
-    # Background: full auto-detect, or (all capabilities set in env) just the
-    # device type, which selects HV scaling and flags unsupported inverters
-    detect = refresh_device_type if env_config_complete() else refresh_inverter_config
-    threading.Thread(target=detect, args=(inverter, inverter_config),
+    # Background: auto-detect (see detect_inverter)
+    threading.Thread(target=detect_inverter, args=(inverter, inverter_config),
                      name="inverter-detect", daemon=True).start()
 
     # Outage schedule provider
@@ -1226,6 +1261,10 @@ def get_config():
     for key in SECRET_CONFIG_KEYS:
         if values.get(key):
             values[key] = mask_secret(values[key])
+    if "INVERTER_HAS_GENERATOR" not in values and inverter_config is not None:
+        # Not set: auto-detected. The wizard shows what the dashboard found, so
+        # saving (which writes the choice) doesn't switch off a detected generator.
+        values["INVERTER_HAS_GENERATOR"] = "true" if inverter_config.has_generator else "false"
     return jsonify(values)
 
 

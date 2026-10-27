@@ -216,6 +216,32 @@ def test_first_meter_wins_unless_serial_configured(tmp_path):
     assert chosen.get_status()["serial"] == "B" and chosen.get_status()["power_w"] == 2.0
 
 
+def test_a_gone_meters_stored_messages_dont_take_over(tmp_path):
+    """The broker keeps an old meter's last messages: a live meter must win over
+    one heard only from those, with its own stored messages applied first."""
+    meter = SmartMeter(daily_file=str(tmp_path / "d.json"))
+    meter.handle_message("buckler/OLD/status", "offline", retained=True)
+    meter.handle_message("buckler/NEW/relay/r1", "0", retained=True)
+    meter.handle_message("buckler/NEW/data/P", "5")
+    status = meter.get_status()
+    assert status["serial"] == "NEW" and status["power_w"] == 5.0 and status["status"] == "ok"
+    assert meter._relays == {"r1": 0}
+    # Once a meter is live, the first one still wins
+    meter.handle_message("buckler/OTHER/data/P", "7")
+    assert meter.get_status()["serial"] == "NEW"
+
+
+def test_daily_baseline_belongs_to_one_meter(tmp_path):
+    daily = str(tmp_path / "d.json")
+    first = SmartMeter(daily_file=daily)
+    first.handle_message("buckler/A/dataJson", json.dumps({**SINGLE_PHASE_JSON, "posWh": 100000.0}))
+    # Another meter (replaced) with a higher counter: no jump in today's usage
+    second = SmartMeter(daily_file=daily)
+    second.handle_message("buckler/B/dataJson", json.dumps({**SINGLE_PHASE_JSON, "posWh": 500000.0}))
+    second.handle_message("buckler/B/dataJson", json.dumps({**SINGLE_PHASE_JSON, "posWh": 500300.0}))
+    assert second.get_status()["today_consumed_kwh"] == pytest.approx(0.3)
+
+
 def test_ignores_garbage(meter):
     meter.handle_message("other/1/dataJson", "{}")
     meter.handle_message("buckler/1/dataJson", "not json")

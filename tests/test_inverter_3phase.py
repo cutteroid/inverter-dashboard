@@ -171,3 +171,49 @@ def test_a_failing_block_falls_back_to_single_reads():
     with patch("inverters.deye.time.sleep"):
         data = inv.read_all_data()
     assert "error" not in data and data["pv1_power"] == 1240 and data["load_power"] == 820
+
+
+def _client(read):
+    from unittest.mock import MagicMock
+    with patch("inverters.deye.PySolarmanV5"):
+        inv = DeyeInverter(ip="192.168.1.1", serial=123456)
+    client = MagicMock()
+    client.read_holding_registers.side_effect = read
+    inv.inverter = client
+    return inv, client
+
+
+@pytest.mark.parametrize("phases", [1, 3])
+def test_a_logger_timeout_is_an_error_not_a_good_poll(phases):
+    """pysolarmanv5 raises a bare queue.Empty (empty text) when the logger doesn't
+    answer: the readings must still say error, or partial data passes as good."""
+    import queue
+
+    def read(addr, count):
+        raise queue.Empty()
+    inv, client = _client(read)
+    inv.config = InverterConfig(phases=phases)
+    with patch("inverters.deye.time.sleep"):
+        data = inv.read_all_data()
+    assert data["error"] == "no answer from the logger (timeout)"
+
+
+def test_no_answer_ends_the_poll_instead_of_waiting_for_each_block():
+    """A logger that doesn't answer: one timeout, not one per block and register."""
+    import queue
+
+    def read(addr, count):
+        raise queue.Empty()
+    inv, client = _client(read)
+    with patch("inverters.deye.time.sleep"):
+        data = inv.read_all_data()
+    assert "error" in data
+    assert client.read_holding_registers.call_count == 1
+
+
+def test_loads_and_generator_power_are_signed(inverter):
+    inverter.config = InverterConfig(phases=3, has_generator=True)
+    regs = {**REGISTERS, 653: u16(-15), 650: u16(-5), 667: u16(-120)}
+    with patch.object(inverter, "read_register", side_effect=lambda addr: regs.get(addr, 0)):
+        data = inverter._read_3p_data_unlocked()
+    assert (data["load_power"], data["load_l1"], data["generator_power"]) == (-15, -5, -120)

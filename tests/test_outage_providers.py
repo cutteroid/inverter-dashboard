@@ -402,6 +402,21 @@ class TestFailedFetchIsNotClear:
             status = poller.get_outage_status()
         assert status["status"] == "unknown"
 
+    def test_after_midnight_the_last_fetchs_tomorrow_is_today(self):
+        """A 00:00-04:00 outage published yesterday as "tomorrow" is active just
+        after midnight, before the providers publish the new day as today."""
+        poller = OutageSchedulePoller(provider=self._OkProvider([]))
+        now = datetime.now().replace(hour=0, minute=5, second=0, microsecond=0)
+        poller._windows = [(20, 0, 22, 0)]                     # yesterday's today
+        poller._days = {now.date() - timedelta(days=1): [(20, 0, 22, 0)], now.date(): [(0, 0, 4, 0)]}
+        poller._last_updated = now - timedelta(minutes=10)    # 23:55 yesterday
+        with patch("outage_providers.base.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.combine = datetime.combine
+            mock_dt.min = datetime.min
+            status = poller.get_outage_status()
+        assert status["status"] == "active" and status["end_time"].hour == 4
+
 
 class TestProvidersRaiseOnHttpError:
     @staticmethod
@@ -584,6 +599,20 @@ class TestProvidersReportErrors:
         with patch("outage_providers.yasno.requests.get", return_value=resp):
             with pytest.raises(OutageFetchError, match="isn't published yet"):
                 YasnoProvider(group="2.1").fetch_days()
+
+    def test_yasno_this_day_still_sent_as_tomorrow_is_used(self):
+        from datetime import date, timedelta
+        from unittest.mock import MagicMock
+        from outage_providers.yasno import YasnoProvider
+        today = date.today()
+        yesterday = (today - timedelta(days=1)).isoformat()
+        resp = MagicMock(ok=True)
+        resp.json.return_value = {"2.1": {
+            "today": {"date": yesterday + "T00:00:00+02:00", "slots": []},
+            "tomorrow": {"date": today.isoformat() + "T00:00:00+02:00",
+                         "slots": [{"start": 0, "end": 240, "type": "Definite"}]}}}
+        with patch("outage_providers.yasno.requests.get", return_value=resp):
+            assert YasnoProvider(group="2.1").fetch_days() == {today: [(0, 0, 4, 0)]}
 
     def test_poller_keeps_the_last_schedule_when_today_is_missing(self):
         from datetime import date, timedelta

@@ -159,9 +159,12 @@ class OutageSchedulePoller:
         now = datetime.now()
         today = now.date()
 
-        # Only trust a schedule fetched today and recently; otherwise a failed
-        # fetch (or yesterday's windows after midnight) would read as "clear".
-        if (last_updated is None or last_updated.date() != today
+        # Only trust a recent schedule that has this day; otherwise a failed fetch
+        # would read as "clear". Just after midnight that is the last fetch's
+        # "tomorrow", until the providers publish the new day as today.
+        if last_updated is not None and last_updated.date() != today:
+            windows = days.get(today)
+        if (last_updated is None or windows is None
                 or now - last_updated > SCHEDULE_MAX_AGE):
             if last_error:
                 return {"status": "error", "error": last_error}

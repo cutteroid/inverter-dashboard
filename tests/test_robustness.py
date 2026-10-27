@@ -33,6 +33,54 @@ def test_unknown_model_this_time_keeps_the_known_one():
         assert json.load(f)["family"] == "hybrid_3p_hv"
 
 
+def test_a_generator_found_before_stays_found():
+    """Detection only sees a generator while it runs: a restart before it is
+    started must not drop the generator card and runtime log."""
+    config = InverterConfig(phases=3, has_generator=True)
+    inv = MagicMock()
+    inv.detect_config.return_value = InverterConfig(phases=3, has_generator=False)
+    app.refresh_inverter_config(inv, config)
+    assert config.has_generator is True
+    assert app.load_cached_inverter_config().has_generator is True
+
+
+def test_generator_switched_off_in_env_stays_off(monkeypatch):
+    monkeypatch.setenv("INVERTER_HAS_GENERATOR", "false")
+    config = InverterConfig(phases=3, has_generator=False)
+    inv = MagicMock()
+    inv.detect_config.return_value = InverterConfig(phases=3, has_generator=True)
+    app.refresh_inverter_config(inv, config)
+    assert config.has_generator is False
+
+
+def test_unanswered_device_type_is_asked_again(monkeypatch):
+    """HV scaling depends on the model: a logger busy at startup mustn't leave
+    it unknown until the next restart."""
+    for key in app._CONFIG_ENV_KEYS:
+        monkeypatch.setenv(key, {"INVERTER_PHASES": "3", "INVERTER_PV_STRINGS": "2"}.get(key, "true"))
+    monkeypatch.setattr(app.time, "sleep", lambda s: None)
+    config = InverterConfig()
+    inv = MagicMock()
+    inv.read_device_type.side_effect = [(None, "unknown"), (None, "unknown"), (0x0600, "hybrid_3p_hv")]
+    inv.family_supported.return_value = True
+    app.detect_inverter(inv, config)
+    assert config.family == "hybrid_3p_hv" and inv.read_device_type.call_count == 3
+    # Saved, and used at the next start even with every capability in env
+    assert app.initial_inverter_config().family == "hybrid_3p_hv"
+
+
+def test_device_type_retries_give_up(monkeypatch):
+    for key in app._CONFIG_ENV_KEYS:
+        monkeypatch.setenv(key, {"INVERTER_PHASES": "3", "INVERTER_PV_STRINGS": "2"}.get(key, "true"))
+    monkeypatch.setattr(app.time, "sleep", lambda s: None)
+    config = InverterConfig()
+    inv = MagicMock()
+    inv.read_device_type.return_value = (None, "unknown")
+    app.detect_inverter(inv, config)
+    assert config.family == "unknown"
+    assert inv.read_device_type.call_count == 1 + len(app.DEVICE_TYPE_RETRY_SECONDS)
+
+
 def test_device_type_check_failure_doesnt_raise():
     config = InverterConfig(family="hybrid_3p_lv")
     inv = MagicMock()

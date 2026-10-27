@@ -5,9 +5,10 @@ three-phase hybrid (registers ~500-700; high-voltage models scale some values).
 Register 0 (device type) tells the family.
 """
 import logging
+import queue
 import time
 
-from pysolarmanv5 import PySolarmanV5
+from pysolarmanv5 import NoSocketAvailableError, PySolarmanV5
 
 from .base import (InverterConfig, InverterDriver, grid_online, grid_phases_missing,
                    grid_state, to_signed)
@@ -24,6 +25,19 @@ def parse_logger_serial(raw):
     return serial if 0 < serial <= MAX_LOGGER_SERIAL else 0
 
 logger = logging.getLogger(__name__)
+
+# The logger didn't answer or the connection broke (not an error reply from the
+# inverter): further reads in the same poll would only wait out the same timeout
+# (pysolarmanv5 raises a bare queue.Empty on a timeout)
+CONNECTION_ERRORS = (queue.Empty, OSError, NoSocketAvailableError)
+
+
+def error_text(e):
+    """Text for the readings' "error": never empty, since an empty error would
+    read as a good poll (a timeout's queue.Empty has no message)."""
+    if isinstance(e, queue.Empty):
+        return "no answer from the logger (timeout)"
+    return str(e) or type(e).__name__
 
 
 # Register 0 ("device type") -> inverter family; codes as used by ha-solarman's
@@ -189,11 +203,14 @@ class DeyeInverter(InverterDriver):
     def _prefetch(self, blocks):
         """Read the poll's register blocks, one request each (the logger handles
         one request at a time, so ~9 instead of ~27 makes a poll much shorter).
-        A block that fails is just left out: its registers are then read one by one."""
+        A block the inverter refuses is just left out: its registers are then read
+        one by one. No answer at all ends the poll (CONNECTION_ERRORS)."""
         self._prefetched = {}
         for start, count in blocks:
             try:
                 values = self.read_registers(start, count)
+            except CONNECTION_ERRORS:
+                raise
             except Exception as e:
                 logger.debug("Block read %d+%d failed, reading one by one: %s", start, count, e)
                 values = []
@@ -319,9 +336,10 @@ class DeyeInverter(InverterDriver):
             time.sleep(0.05)
 
             # Load
-            data["load_power"] = self.read_register(178)
+            # Loads and generator power are signed (like grid power)
+            data["load_power"] = to_signed(self.read_register(178))
             time.sleep(0.05)
-            data["load_l1"] = self.read_register(176)
+            data["load_l1"] = to_signed(self.read_register(176))
             time.sleep(0.05)
 
             # Daily stats
@@ -336,7 +354,7 @@ class DeyeInverter(InverterDriver):
 
             # Generator (GEN/GRID2 port) — 1-phase Sunsynk uses register 166
             if self.config.has_generator:
-                data["generator_power"] = self.read_register(166)
+                data["generator_power"] = to_signed(self.read_register(166))
                 time.sleep(0.05)
             else:
                 data["generator_power"] = 0
@@ -353,7 +371,8 @@ class DeyeInverter(InverterDriver):
                 data["battery_status"] = "N/A"
 
         except Exception as e:
-            data["error"] = str(e)
+            logger.warning("Error reading inverter data: %s", error_text(e))
+            data["error"] = error_text(e)
         finally:
             self.disconnect()
 
@@ -443,8 +462,8 @@ class DeyeInverter(InverterDriver):
             data["grid_power"] = to_signed(raw_grid_power)
             self._pause()
 
-            # Load
-            data["load_power"] = self.read_register(653)
+            # Load (loads and generator power are signed, like grid power)
+            data["load_power"] = to_signed(self.read_register(653))
             self._pause()
 
             # Daily stats
@@ -459,11 +478,11 @@ class DeyeInverter(InverterDriver):
 
             # Phase data (3-phase system)
             if self.config.phases == 3:
-                data["load_l1"] = self.read_register(650)
+                data["load_l1"] = to_signed(self.read_register(650))
                 self._pause()
-                data["load_l2"] = self.read_register(651)
+                data["load_l2"] = to_signed(self.read_register(651))
                 self._pause()
-                data["load_l3"] = self.read_register(652)
+                data["load_l3"] = to_signed(self.read_register(652))
                 self._pause()
 
                 data["voltage_l1"] = self.read_register(644) / 10
@@ -474,7 +493,7 @@ class DeyeInverter(InverterDriver):
 
             # Generator (GEN/GRID2 port) — 3-phase uses register 667
             if self.config.has_generator:
-                data["generator_power"] = self.read_register(667)
+                data["generator_power"] = to_signed(self.read_register(667))
                 self._pause()
             else:
                 data["generator_power"] = 0
@@ -493,8 +512,8 @@ class DeyeInverter(InverterDriver):
             self._read_health_3p(data)
 
         except Exception as e:
-            logger.warning("Error reading inverter data: %s", e)
-            data["error"] = str(e)
+            logger.warning("Error reading inverter data: %s", error_text(e))
+            data["error"] = error_text(e)
         finally:
             self._prefetched = {}
             self.disconnect()
@@ -661,7 +680,7 @@ class DeyeInverter(InverterDriver):
 
                 gen_w = 0
                 try:
-                    gen_w = self.read_register(gen_reg)
+                    gen_w = to_signed(self.read_register(gen_reg))
                     gen_answered += 1
                 except Exception as e:
                     logger.info("detect_config stage 3: generator read failed: %s", e)

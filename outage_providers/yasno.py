@@ -60,14 +60,19 @@ class YasnoProvider(OutageProvider):
         today = date.today()
         today_data = group_data.get("today") or {}
         today_date = str(today_data.get("date", ""))
-        if today_date and not today_date.startswith(today.isoformat()):
-            # Just after midnight YASNO may still send yesterday as "today"; the
-            # poller keeps the last schedule (yesterday's "tomorrow") meanwhile
-            raise OutageFetchError(f"YASNO: today's schedule isn't published yet ({today_date[:10]})")
-        result = {today: self._definite_windows(today_data)}
         # YASNO always returns a "tomorrow" entry, empty until it is scheduled,
         # so only treat it as published when it has outage slots.
         tomorrow_data = group_data.get("tomorrow") or {}
+        if today_date and not today_date.startswith(today.isoformat()):
+            # Just after midnight YASNO may still send yesterday as "today" and
+            # this day as "tomorrow": use that while it has outage slots
+            if str(tomorrow_data.get("date", "")).startswith(today.isoformat()):
+                windows = self._definite_windows(tomorrow_data)
+                if windows:
+                    logger.info("YASNO: group %s today %s (still sent as tomorrow)", self.group, windows)
+                    return {today: windows}
+            raise OutageFetchError(f"YASNO: today's schedule isn't published yet ({today_date[:10]})")
+        result = {today: self._definite_windows(today_data)}
         tomorrow = today + timedelta(days=1)
         if str(tomorrow_data.get("date", "")).startswith(tomorrow.isoformat()):
             tomorrow_windows = self._definite_windows(tomorrow_data)

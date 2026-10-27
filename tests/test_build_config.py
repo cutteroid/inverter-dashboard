@@ -193,5 +193,6 @@ class TestDeviceTypePlumbing:
         config = InverterConfig()
         inv = MagicMock()
         inv.read_device_type.return_value = (0x0005, "hybrid_3p_lv")
+        inv.family_supported.return_value = True
         app.refresh_device_type(inv, config)
         assert (config.device_type, config.family) == (5, "hybrid_3p_lv")

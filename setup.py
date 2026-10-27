@@ -451,15 +451,19 @@ def write_env(values, extra_lines, path=".env"):
         lines.append(f"DASHBOARD_TITLE={values['DASHBOARD_TITLE']}")
         lines.append("")
 
-    # Generator
-    gen_enabled = values.get("INVERTER_HAS_GENERATOR", "false")
-    if gen_enabled.lower() in ("true", "1", "yes"):
+    # Generator: "no" is written too, or auto-detect would decide (and keeps a
+    # generator it found once); not set at all: auto-detect
+    gen_enabled = values.get("INVERTER_HAS_GENERATOR")
+    if gen_enabled is not None:
         lines.append("# Generator")
-        lines.append(f"INVERTER_HAS_GENERATOR=true")
-        if "GENERATOR_FUEL_RATE" in values:
-            lines.append(f"GENERATOR_FUEL_RATE={values['GENERATOR_FUEL_RATE']}")
-        if "GENERATOR_OIL_CHANGE_DATE" in values:
-            lines.append(f"GENERATOR_OIL_CHANGE_DATE={values['GENERATOR_OIL_CHANGE_DATE']}")
+        if gen_enabled.lower() in ("true", "1", "yes"):
+            lines.append("INVERTER_HAS_GENERATOR=true")
+            if "GENERATOR_FUEL_RATE" in values:
+                lines.append(f"GENERATOR_FUEL_RATE={values['GENERATOR_FUEL_RATE']}")
+            if "GENERATOR_OIL_CHANGE_DATE" in values:
+                lines.append(f"GENERATOR_OIL_CHANGE_DATE={values['GENERATOR_OIL_CHANGE_DATE']}")
+        else:
+            lines.append("INVERTER_HAS_GENERATOR=false")
         lines.append("")
 
     lines.append("# Telegram Bot")

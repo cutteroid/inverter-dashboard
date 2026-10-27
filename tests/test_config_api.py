@@ -129,6 +129,16 @@ class TestGetConfig:
         data = resp.get_json()
         assert data["TELEGRAM_BOT_TOKEN"] == "****"
 
+    def test_generator_not_in_env_shows_the_detected_one(self, client):
+        """The wizard writes its generator choice: with nothing in .env it must
+        start from what auto-detect found, not from "no"."""
+        c, app_module = client
+        app_module.inverter_config.has_generator = True
+        with patch("setup.load_existing_env", return_value=({"INVERTER_IP": "1.2.3.4"}, [])):
+            assert c.get("/api/config").get_json()["INVERTER_HAS_GENERATOR"] == "true"
+        with patch("setup.load_existing_env", return_value=({"INVERTER_HAS_GENERATOR": "false"}, [])):
+            assert c.get("/api/config").get_json()["INVERTER_HAS_GENERATOR"] == "false"
+
     def test_masks_alerts_in_ua_token(self, client):
         c, _ = client
         mock_values = {"ALERTS_IN_UA_TOKEN": "a1b2c3d4e5f6a7b8c9d0e1f2"}

@@ -79,7 +79,9 @@ class TestWriteEnv:
         assert "GENERATOR_FUEL_RATE=2.5" in content
         assert "# Generator" in content
 
-    def test_no_generator_section_when_disabled(self, tmp_path):
+    def test_no_generator_is_written(self, tmp_path):
+        """"No generator" must be written: otherwise auto-detect decides, and it
+        keeps a generator it found once."""
         env_file = str(tmp_path / ".env")
         values = {
             "INVERTER_IP": "1.2.3.4",
@@ -87,11 +89,20 @@ class TestWriteEnv:
             "OUTAGE_PROVIDER": "none",
             "TELEGRAM_ENABLED": "false",
             "INVERTER_HAS_GENERATOR": "false",
+            "GENERATOR_FUEL_RATE": "2.5",
         }
         write_env(values, [], path=env_file)
         content = open(env_file).read()
-        assert "INVERTER_HAS_GENERATOR" not in content
-        assert "# Generator" not in content
+        assert "INVERTER_HAS_GENERATOR=false" in content
+        assert "GENERATOR_FUEL_RATE" not in content
+
+    def test_generator_not_set_is_left_to_auto_detect(self, tmp_path):
+        env_file = str(tmp_path / ".env")
+        values = {"INVERTER_IP": "1.2.3.4", "LOGGER_SERIAL": "99", "OUTAGE_PROVIDER": "none",
+                  "TELEGRAM_ENABLED": "false"}
+        write_env(values, [], path=env_file)
+        content = open(env_file).read()
+        assert "INVERTER_HAS_GENERATOR" not in content and "# Generator" not in content
 
     def test_extra_lines_appended(self, tmp_path):
         env_file = str(tmp_path / ".env")
