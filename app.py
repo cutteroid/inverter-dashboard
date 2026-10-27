@@ -193,9 +193,14 @@ INVERTER_CACHE_MAX_AGE = 300  # seconds – serve cached data if fresher than 5 
 class InverterPoller:
     """Polls inverter for current data in a background thread."""
 
+    # The cache file is for a restart (readings up to INVERTER_CACHE_MAX_AGE old
+    # are shown at once); written this often, not on every poll
+    CACHE_SAVE_SECONDS = 120
+
     def __init__(self, inverter, poll_interval=INVERTER_POLL_SECONDS, cache_file=None, history=None):
         self.inverter = inverter
         self.poll_interval = poll_interval
+        self._cache_saved_at = None   # time.monotonic() of the last cache file write
         self.history = history  # PowerHistory for the sparklines (good readings only)
         self._cache = {}
         self._lock = threading.Lock()
@@ -223,9 +228,13 @@ class InverterPoller:
             logger.exception("Failed to load inverter cache")
 
     def _save_cache(self):
-        """Persist latest inverter data to file."""
+        """Persist latest inverter data to file (at most every CACHE_SAVE_SECONDS)."""
         if not self.cache_file:
             return
+        now = time.monotonic()
+        if self._cache_saved_at is not None and now - self._cache_saved_at < self.CACHE_SAVE_SECONDS:
+            return
+        self._cache_saved_at = now
         try:
             with self._lock:
                 data = dict(self._cache)
@@ -679,6 +688,7 @@ def _record_grid_daily_import(daily_kwh, now=None):
     midnight = datetime.combine((now + GRID_DAY_DRIFT).date(), datetime.min.time())
     near_midnight = abs(now - midnight) <= GRID_DAY_DRIFT
     log = load_grid_daily_log()
+    before = dict(log)
     sure = not near_midnight
     if last is not None and daily_kwh < last:
         if not near_midnight:
@@ -696,7 +706,8 @@ def _record_grid_daily_import(daily_kwh, now=None):
     if len(sorted_dates) > 90:
         for old_date in sorted_dates[90:]:
             del log[old_date]
-    save_grid_daily_log(log)
+    if log != before:   # the counter moves in 0.1 kWh steps: most polls change nothing
+        save_grid_daily_log(log)
 
 
 def load_generator_log():
@@ -715,6 +726,9 @@ generator_session_start = None
 # An open session whose last reading ("last_seen") is older than this when the
 # app starts again ended while the app was down: it's closed at that reading
 GENERATOR_RESUME_GAP = timedelta(minutes=5)
+# How often a running session's last_seen is written (the log isn't saved on
+# polls that change nothing else)
+GENERATOR_LAST_SEEN_SAVE = timedelta(seconds=60)
 
 
 def track_generator_runtime(generator_power, now=None):
@@ -753,6 +767,7 @@ def _track_generator_runtime(generator_power, now=None):
     running = generator_power > 0
 
     log = load_generator_log()
+    before = json.dumps(log, sort_keys=True)
 
     if today not in log:
         log[today] = {"runtime_seconds": 0, "sessions": []}
@@ -807,7 +822,10 @@ def _track_generator_runtime(generator_power, now=None):
         generator_session_start = None
     if running and log[today]["sessions"] and log[today]["sessions"][-1]["end"] is None:
         # The latest reading of the open session, for a restart (see above)
-        log[today]["sessions"][-1]["last_seen"] = now.isoformat(timespec="seconds")
+        session = log[today]["sessions"][-1]
+        seen = _parse_time(session.get("last_seen"))
+        if seen is None or now - seen >= GENERATOR_LAST_SEEN_SAVE:
+            session["last_seen"] = now.isoformat(timespec="seconds")
 
     generator_last_running = running
 
@@ -817,16 +835,27 @@ def _track_generator_runtime(generator_power, now=None):
         for old_date in sorted_dates[90:]:
             del log[old_date]
 
-    save_generator_log(log)
+    if json.dumps(log, sort_keys=True) != before:
+        save_generator_log(log)
+
+
+# The phase statistics change on every poll: they're kept in memory and written
+# every PHASE_STATS_SAVE_SECONDS, on a new day and when cleared (a restart
+# loses at most those last minutes of energy)
+PHASE_STATS_SAVE_SECONDS = 300
+_phase_stats = {"path": None, "stats": None, "saved_at": None}
 
 
 def load_phase_stats():
-    """Load phase statistics from file."""
-    return load_json(PHASE_STATS_FILE, {})
+    """The phase statistics: in memory, read from the file once."""
+    if _phase_stats["path"] != PHASE_STATS_FILE or _phase_stats["stats"] is None:
+        _phase_stats.update(path=PHASE_STATS_FILE, stats=load_json(PHASE_STATS_FILE, {}), saved_at=None)
+    return _phase_stats["stats"]
 
 
 def save_phase_stats(stats):
-    """Save phase statistics to file."""
+    """Keep the phase statistics and write them to file now."""
+    _phase_stats.update(path=PHASE_STATS_FILE, stats=stats, saved_at=time.monotonic())
     atomic_write_json(PHASE_STATS_FILE, stats, indent=2)
 
 
@@ -842,11 +871,11 @@ def _record_phase_sample(load_l1, load_l2, load_l3):
     now = datetime.now()
     today = now.strftime("%Y-%m-%d")
 
-    # Load existing stats
     stats = load_phase_stats()
+    new_day = today not in stats
 
     # Initialize today's entry if needed
-    if today not in stats:
+    if new_day:
         stats[today] = {
             "l1_wh": 0,
             "l2_wh": 0,
@@ -882,7 +911,9 @@ def _record_phase_sample(load_l1, load_l2, load_l3):
         for old_date in sorted_dates[30:]:
             del stats[old_date]
 
-    save_phase_stats(stats)
+    saved_at = _phase_stats["saved_at"]
+    if new_day or saved_at is None or time.monotonic() - saved_at >= PHASE_STATS_SAVE_SECONDS:
+        save_phase_stats(stats)
 
 
 @app.after_request
@@ -957,7 +988,8 @@ def get_history():
 @app.route("/api/phase-stats")
 def get_phase_stats():
     """Get phase statistics."""
-    stats = load_phase_stats()
+    with _data_lock:   # the poller adds to them meanwhile
+        stats = {day: dict(values) for day, values in load_phase_stats().items()}
 
     # Calculate daily totals and format for frontend
     result = []

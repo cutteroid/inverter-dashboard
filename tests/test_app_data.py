@@ -137,8 +137,7 @@ class TestRecordPhaseSample:
         with patch("app.PHASE_STATS_FILE", stats_file):
             import app
             app.record_phase_sample(100, 200, 300)
-        with open(stats_file) as f:
-            stats = json.load(f)
+            stats = app.load_phase_stats()   # in memory: written to file every few minutes
         today = datetime.now().strftime("%Y-%m-%d")
         assert stats[today]["samples"] == 1
         # No energy accumulated on first sample (no previous time)
@@ -155,8 +154,7 @@ class TestRecordPhaseSample:
             app.last_sample_time = time.monotonic() - 60
             # Second sample
             app.record_phase_sample(1000, 2000, 3000)
-        with open(stats_file) as f:
-            stats = json.load(f)
+            stats = app.load_phase_stats()   # in memory: written to file every few minutes
         today = datetime.now().strftime("%Y-%m-%d")
         # 1000W * (60s/3600) = ~16.67 Wh
         assert stats[today]["l1_wh"] > 15
@@ -171,8 +169,7 @@ class TestRecordPhaseSample:
             # Simulate 10 minutes elapsed (> 5 min threshold)
             app.last_sample_time = time.monotonic() - 600
             app.record_phase_sample(1000, 2000, 3000)
-        with open(stats_file) as f:
-            stats = json.load(f)
+            stats = app.load_phase_stats()   # in memory: written to file every few minutes
         today = datetime.now().strftime("%Y-%m-%d")
         # Energy should NOT have been accumulated (interval > 0.1 hours = 6 min)
         assert stats[today]["l1_wh"] == 0
@@ -185,8 +182,7 @@ class TestRecordPhaseSample:
             app.record_phase_sample(100, 200, 300)
             app.last_sample_time = time.monotonic() - 30
             app.record_phase_sample(500, 600, 700)
-        with open(stats_file) as f:
-            stats = json.load(f)
+            stats = app.load_phase_stats()   # in memory: written to file every few minutes
         today = datetime.now().strftime("%Y-%m-%d")
         assert stats[today]["l1_max"] == 500
         assert stats[today]["l2_max"] == 600

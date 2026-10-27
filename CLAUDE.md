@@ -93,11 +93,11 @@ Map: `static/data/ukraine-regions.json` (regions by ISO 3166-2 code, districts b
 Background services start once in `main()` (`init_services()`), not at import — importing `app` (tests, WSGI) starts nothing. Do not reintroduce a reloader/multi-process server: every poller would run in each process.
 
 The app runs several daemon threads:
-- `InverterPoller` — one full inverter read every 30s (`INVERTER_POLL_SECONDS`; also feeds the battery smoothing and the sparkline history), caches to JSON file
+- `InverterPoller` — one full inverter read every 30s (`INVERTER_POLL_SECONDS`; also feeds the battery smoothing and the sparkline history), caches to JSON file every `CACHE_SAVE_SECONDS` (2 min)
 - `inverter-detect` — one-off background auto-detect; updates the shared `InverterConfig` in place and saves it to `inverter_config.json` for the next start
 - `WeatherPoller` — fetches Open-Meteo weather every 15 min
 - `OutageSchedulePoller` — fetches outage schedule every 60s
-- `TelegramBot` — runs Telegram polling loop
+- `TelegramBot` — runs Telegram polling loop (long polling, `LONG_POLL_SECONDS`, over one `requests.Session`)
 - `AlertsPoller` — fetches air raid alerts every 30s
 - paho-mqtt network loop (`SmartMeterClient`, when the smart meter is enabled) — handles meter messages as they arrive
 
@@ -105,7 +105,7 @@ Transient failures never replace good data: `InverterPoller` keeps the last good
 
 All pollers use thread locks for safe cache access. The inverter connection (the driver's `lock`) is shared between `InverterPoller` and auto-detect (one logger connection per poll: its few TCP slots are the scarce resource). The Telegram bot reads `InverterPoller.data` (no direct inverter reads).
 
-Data files (stats, logs, caches, bot state) default to `storage.data_path(name)` = `data/<name>` when `data/` exists (the Docker volume, so they survive deploys), else next to the app; tests redirect them all to a temp folder (autouse fixture in `tests/conftest.py`). They go through `storage.py`: `atomic_write_json()` (temp file per process/thread + fsync + rename, safe across power cuts and concurrent saves) and `load_json()` (missing/corrupt file → default; corrupt files are moved to `*.corrupt`). Read-modify-write updates in `app.py` hold `_data_lock`.
+Data files (stats, logs, caches, bot state) default to `storage.data_path(name)` = `data/<name>` when `data/` exists (the Docker volume, so they survive deploys), else next to the app; tests redirect them all to a temp folder (autouse fixture in `tests/conftest.py`). They go through `storage.py`: `atomic_write_json()` (temp file per process/thread + fsync + rename, safe across power cuts and concurrent saves) and `load_json()` (missing/corrupt file → default; corrupt files are moved to `*.corrupt`). Read-modify-write updates in `app.py` hold `_data_lock`. Disk writes are kept rare on the NAS: phase stats live in memory (written every `PHASE_STATS_SAVE_SECONDS`, on a new day and when cleared), the grid and generator logs are written only when they change (a running generator's `last_seen` every minute).
 
 The container starts as root only for `docker-entrypoint.sh`: it chowns to uid 1000 whatever in `data/` that user can't write (never `data/mosquitto/`), then runs the app as uid 1000 via `setpriv`. Keep the app itself non-root.
 
@@ -118,7 +118,7 @@ Config saved from the UI is validated by `setup.validate_config()` (types, range
 - **Use holding registers** (`read_holding_registers`), not input registers
 - Slave ID: 1
 - Connection is opened per-poll and closed after each read cycle (see `read_all_data` → `disconnect()` in finally block)
-- 50ms sleep between register reads to reduce logger connection pressure
+- 50ms sleep between register requests to reduce logger connection pressure; the 3-phase poll reads neighbouring registers in blocks first (`BLOCKS_3P`, `_prefetch()`: ~11 requests instead of ~27; `read_register()` answers from the block, a failed block falls back to single reads)
 - Configuration via environment variables: `INVERTER_IP`, `LOGGER_SERIAL` (`INVERTER_TYPE=deye` or unset)
 - Inverter capabilities (phases, battery, PV strings) auto-detected at startup via `detect_config()`
 - Register 0 = device type → family (`DEVICE_FAMILIES` in `inverters/deye.py`, codes from ha-solarman's Deye autodetection): `hybrid_1p` (Sunsynk-style map), `hybrid_3p_lv`, `hybrid_3p_hv` (same map as LV, but battery voltage ×0.1 V and battery/PV power ×10 W — `DeyeInverter.high_voltage`), `string` / `micro` (other maps, not implemented: `supported: false` → warning on the dashboard). A known family sets the phase count without L2/L3 voltage sampling; unknown codes fall back to it. Read even when all `INVERTER_*` capabilities are set in env (`refresh_device_type`)

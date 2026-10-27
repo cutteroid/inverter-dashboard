@@ -132,3 +132,42 @@ def test_battery_temperature_single_phase():
         inv = DeyeInverter(ip="192.168.1.1", serial=1, config=InverterConfig(phases=1))
         with patch.object(inv, "read_register", side_effect=lambda addr: {182: 1255, 183: 5300}.get(addr, 0)):
             assert inv._read_1p_data_unlocked()["battery_temperature"] == pytest.approx(25.5)
+
+
+def test_poll_reads_neighbouring_registers_in_blocks():
+    """~9 logger requests per poll instead of ~27 (one per register)."""
+    from unittest.mock import MagicMock, patch
+    from inverters import DeyeInverter
+    regs = {586: 1250, 587: 5320, 588: 77, 590: 65436, 591: 65036, 592: 200,
+            598: 2301, 599: 2310, 600: 2295, 644: 2290, 645: 2300, 646: 2310,
+            650: 310, 651: 360, 652: 150, 653: 820, 520: 32, 521: 11, 526: 116, 529: 94,
+            672: 1240, 673: 1110, 552: 4, 607: 430, 115: 10, 500: 2}
+    with patch("inverters.deye.PySolarmanV5"):
+        inv = DeyeInverter(ip="192.168.1.1", serial=123456)
+    client = MagicMock()
+    client.read_holding_registers.side_effect = lambda addr, count: [regs.get(a, 0) for a in range(addr, addr + count)]
+    inv.inverter = client
+    with patch("inverters.deye.time.sleep"):
+        data = inv.read_all_data()
+    assert "error" not in data
+    assert data["pv1_power"] == 1240 and data["load_power"] == 820 and data["daily_grid_import"] == 3.2
+    assert data["grid_voltage_l2"] == 231.0 and data["load_l3"] == 150 and data["battery_soc_raw"] == 77
+    assert client.read_holding_registers.call_count <= 12
+
+
+def test_a_failing_block_falls_back_to_single_reads():
+    from unittest.mock import MagicMock, patch
+    from inverters import DeyeInverter
+    with patch("inverters.deye.PySolarmanV5"):
+        inv = DeyeInverter(ip="192.168.1.1", serial=123456)
+    client = MagicMock()
+
+    def read(addr, count):
+        if count > 1:
+            raise ValueError("illegal data address")
+        return [{672: 1240, 653: 820}.get(addr, 0)]
+    client.read_holding_registers.side_effect = read
+    inv.inverter = client
+    with patch("inverters.deye.time.sleep"):
+        data = inv.read_all_data()
+    assert "error" not in data and data["pv1_power"] == 1240 and data["load_power"] == 820

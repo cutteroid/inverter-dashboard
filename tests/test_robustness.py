@@ -187,9 +187,11 @@ def _gen_log():
 
 def test_open_session_stores_its_last_reading(generator):
     app.track_generator_runtime(1000, now=datetime(2026, 10, 17, 10, 0, 0))
-    app.track_generator_runtime(1000, now=datetime(2026, 10, 17, 10, 0, 30))
+    app.track_generator_runtime(1000, now=datetime(2026, 10, 17, 10, 0, 30))   # not written: < 60 s
+    assert _gen_log()["2026-10-17"]["sessions"][0]["last_seen"] == "2026-10-17T10:00:00"
+    app.track_generator_runtime(1000, now=datetime(2026, 10, 17, 10, 1, 0))
     assert _gen_log()["2026-10-17"]["sessions"] == [
-        {"start": "10:00:00", "end": None, "last_seen": "2026-10-17T10:00:30"}]
+        {"start": "10:00:00", "end": None, "last_seen": "2026-10-17T10:01:00"}]
 
 
 def test_app_down_session_ends_at_its_last_reading(generator):
@@ -320,3 +322,52 @@ def test_old_entries_without_offset_are_read_as_local_time(tmp_path):
                                             "phases": [], "cut": []}], "open": None}))
     (outage,) = OutageLog(str(path), clock=local_now).snapshot()
     assert datetime.fromisoformat(outage["start"]).tzinfo is not None
+
+
+
+# ----- fewer disk writes (NAS load) -----
+
+def test_phase_stats_are_written_every_few_minutes(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(app.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(app, "_phase_stats", {"path": None, "stats": None, "saved_at": None})
+    app.record_phase_sample(100, 100, 100)          # first: written
+    first = os.path.getmtime(app.PHASE_STATS_FILE), open(app.PHASE_STATS_FILE).read()
+    clock[0] += 30
+    app.record_phase_sample(100, 100, 100)          # 30 s later: memory only
+    assert open(app.PHASE_STATS_FILE).read() == first[1]
+    assert next(iter(app.load_phase_stats().values()))["samples"] == 2
+    clock[0] += app.PHASE_STATS_SAVE_SECONDS
+    app.record_phase_sample(100, 100, 100)          # 5 min later: written
+    assert next(iter(json.load(open(app.PHASE_STATS_FILE)).values()))["samples"] == 3
+
+
+def test_grid_log_written_only_when_it_changes(monkeypatch):
+    saves, save = [], app.save_grid_daily_log
+    monkeypatch.setattr(app, "save_grid_daily_log", lambda log: (saves.append(dict(log)), save(log)))
+    when = datetime(2026, 10, 27, 14, 0)
+    for minute, kwh in ((0, 3.2), (1, 3.2), (2, 3.2), (3, 3.3)):
+        app.record_grid_daily_import(kwh, now=when + timedelta(minutes=minute))
+    assert len(saves) == 2
+
+
+def test_generator_log_not_written_while_it_stays_off(monkeypatch):
+    monkeypatch.setattr(app, "generator_last_running", None)
+    monkeypatch.setattr(app, "generator_session_start", None)
+    saves, save = [], app.save_generator_log
+    monkeypatch.setattr(app, "save_generator_log", lambda log: (saves.append(1), save(log)))
+    for minute in range(5):
+        app.track_generator_runtime(0, now=datetime(2026, 10, 17, 10, minute))
+    assert len(saves) == 1   # today's empty entry, once
+
+
+def test_inverter_cache_written_every_two_minutes(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(app.time, "monotonic", lambda: clock[0])
+    poller = app.InverterPoller(MagicMock(), cache_file=app.INVERTER_CACHE_FILE)
+    writes = []
+    monkeypatch.setattr(app, "atomic_write_json", lambda path, data, **kw: writes.append(path))
+    for _ in range(5):                               # 5 polls, 30 s apart
+        poller._save_cache()
+        clock[0] += 30
+    assert len(writes) == 2                          # at 0 s and 120 s

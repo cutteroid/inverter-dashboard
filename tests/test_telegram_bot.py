@@ -45,7 +45,7 @@ class TestErrorIsolation:
         resp.json.return_value = {"result": updates}
         bot._handle_battery = MagicMock(side_effect=RuntimeError("bug"))
         bot._handle_start = MagicMock()
-        with patch("telegram_bot.requests.get", return_value=resp):
+        with patch.object(bot.http, "get", return_value=resp):
             bot.poll_commands()
         bot._handle_start.assert_called_once()
         assert bot.last_update_id == 11  # crashing update is not replayed
@@ -94,7 +94,7 @@ class TestSendRetries:
 
     def test_client_error_is_not_retried(self, real_send):
         resp = MagicMock(ok=False, status_code=403, text="Forbidden: bot was blocked by the user")
-        with patch("telegram_bot.requests.post", return_value=resp) as post, \
+        with patch.object(real_send.http, "post", return_value=resp) as post, \
              patch("telegram_bot.time.sleep") as sleep:
             assert real_send.send_message(1, "hi") is False
         assert post.call_count == 1
@@ -104,7 +104,7 @@ class TestSendRetries:
         limited = MagicMock(ok=False, status_code=429, text="Too Many Requests")
         limited.json.return_value = {"parameters": {"retry_after": 7}}
         ok = MagicMock(ok=True)
-        with patch("telegram_bot.requests.post", side_effect=[limited, ok]), \
+        with patch.object(real_send.http, "post", side_effect=[limited, ok]), \
              patch("telegram_bot.time.sleep") as sleep:
             assert real_send.send_message(1, "hi") is True
         sleep.assert_called_once_with(7)
@@ -112,7 +112,7 @@ class TestSendRetries:
     def test_server_error_is_retried(self, real_send):
         err = MagicMock(ok=False, status_code=502, text="Bad Gateway")
         ok = MagicMock(ok=True)
-        with patch("telegram_bot.requests.post", side_effect=[err, ok]) as post, \
+        with patch.object(real_send.http, "post", side_effect=[err, ok]) as post, \
              patch("telegram_bot.time.sleep"):
             assert real_send.send_message(1, "hi") is True
         assert post.call_count == 2
@@ -184,3 +184,15 @@ class TestOutageForecast:
         bot._handle_outage(1, 1)
         text = bot.send_message.call_args[0][1]
         assert text.startswith("Увага! Відключення заплановано") and "55%" in text
+
+
+def test_long_polling_over_one_session(bot):
+    resp = MagicMock(ok=True)
+    resp.json.return_value = {"result": []}
+    with patch.object(bot.http, "get", return_value=resp) as get:
+        bot.poll_commands()
+        bot.poll_commands()
+    params = get.call_args.kwargs["params"]
+    assert params["timeout"] == telegram_bot.LONG_POLL_SECONDS
+    assert get.call_args.kwargs["timeout"] > telegram_bot.LONG_POLL_SECONDS   # the HTTP timeout outlasts the wait
+    assert get.call_count == 2 and isinstance(bot.http, telegram_bot.requests.Session)

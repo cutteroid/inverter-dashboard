@@ -70,6 +70,10 @@ REG_TEMPERATURES_3P = 540     # 540 DC side, 541 AC side (heatsink): (x - 1000) 
 REG_BATTERY_TOTALS_3P = 516   # 516/517 charged, 518/519 discharged: 0.1 kWh, low word first
 REG_WARNINGS_3P = 553         # 553-554: warning bits -> W01..W32
 REG_FAULTS_3P = 555           # 555-558: fault bits -> F01..F64 (the inverter manual's fault codes)
+# 3-phase poll registers read as blocks (start, count): 586-592 battery,
+# 598-600 grid voltage, 644-653 phase voltages and loads, 520-529 daily
+# energy, 672-673 PV power. The rest (552, 607, 115, 667, 500) one by one.
+BLOCKS_3P = ((586, 7), (598, 3), (644, 10), (520, 10), (672, 2))
 
 
 def inverter_temperature(raw):
@@ -109,6 +113,8 @@ class DeyeInverter(InverterDriver):
         self.inverter = None   # PySolarmanV5 connection while open
         self._health = {}           # last temperatures / battery totals / codes (3-phase)
         self._health_read_at = None  # time.monotonic() of that read
+        self._prefetched = {}       # address -> value read in blocks during a poll
+        self._last_read_cached = False
 
     @classmethod
     def from_settings(cls, settings):
@@ -172,8 +178,34 @@ class DeyeInverter(InverterDriver):
                 logger.debug("Disconnect failed: %s", e)
 
     def read_register(self, address: int) -> int:
-        """Read a single holding register."""
+        """Read a single holding register (from the poll's prefetched blocks if there)."""
+        value = self._prefetched.get(address)
+        if value is not None:
+            self._last_read_cached = True
+            return value
+        self._last_read_cached = False
         return self.inverter.read_holding_registers(address, 1)[0]
+
+    def _prefetch(self, blocks):
+        """Read the poll's register blocks, one request each (the logger handles
+        one request at a time, so ~9 instead of ~27 makes a poll much shorter).
+        A block that fails is just left out: its registers are then read one by one."""
+        self._prefetched = {}
+        for start, count in blocks:
+            try:
+                values = self.read_registers(start, count)
+            except Exception as e:
+                logger.debug("Block read %d+%d failed, reading one by one: %s", start, count, e)
+                values = []
+            if len(values) == count:
+                self._prefetched.update(zip(range(start, start + count), values))
+            time.sleep(0.05)
+
+    def _pause(self):
+        """The pause between requests that spares the logger; none after a value
+        that came from a prefetched block."""
+        if not self._last_read_cached:
+            time.sleep(0.05)
 
     def read_registers(self, address: int, count: int) -> list:
         """Read consecutive holding registers in one request."""
@@ -334,6 +366,7 @@ class DeyeInverter(InverterDriver):
         try:
             if not self.inverter:
                 self.connect()
+            self._prefetch(BLOCKS_3P)
             # HV models report battery voltage in 0.1 V and battery/PV power in 10 W
             hv = self.high_voltage
             power_scale = 10 if hv else 1
@@ -341,10 +374,10 @@ class DeyeInverter(InverterDriver):
             # Solar PV: 672/673 = PV1/PV2 power (514/515 are today's battery
             # charge/discharge energy, not PV)
             data["pv1_power"] = self.read_register(672) * power_scale
-            time.sleep(0.05)
+            self._pause()
             if self.config.pv_strings >= 2:
                 data["pv2_power"] = self.read_register(673) * power_scale
-                time.sleep(0.05)
+                self._pause()
             else:
                 data["pv2_power"] = 0
             data["pv_total_power"] = data["pv1_power"] + data["pv2_power"]
@@ -352,35 +385,35 @@ class DeyeInverter(InverterDriver):
             # Battery
             if self.config.has_battery:
                 data["battery_voltage"] = self.read_register(587) / (10 if hv else 100)
-                time.sleep(0.05)
+                self._pause()
                 # 590/591: battery power (W) / current (0.01 A), signed, Deye
                 # convention discharge > 0; negated so charging is positive here.
                 # (586 is the battery temperature, not the current.)
                 data["battery_current"] = -to_signed(self.read_register(591)) / 100
-                time.sleep(0.05)
+                self._pause()
                 battery_power = -to_signed(self.read_register(590)) * power_scale
-                time.sleep(0.05)
+                self._pause()
 
                 # SOC from register 588 (BMS-reported, same as Solarman); shown as
                 # the median of the last reads (smooth_battery)
                 raw_soc = self.read_register(588)
-                time.sleep(0.05)
+                self._pause()
                 data["battery_soc_raw"] = raw_soc
                 data["battery_temperature"] = battery_temperature(self.read_register(586))
-                time.sleep(0.05)
+                self._pause()
 
                 # For the runtime estimate: 592 = capacity measured by the BMS
                 # ("corrected"), 102 = capacity set on the inverter, 115 = SOC at
                 # which the inverter stops discharging
                 capacity_ah = self.read_register(592)
-                time.sleep(0.05)
+                self._pause()
                 if not capacity_ah:
                     capacity_ah = self.read_register(102)
-                    time.sleep(0.05)
+                    self._pause()
                 data["battery_capacity_ah"] = capacity_ah
                 data["battery_nominal_voltage"] = self.battery_nominal_voltage()
                 data["battery_shutdown_soc"] = self.read_register(115)
-                time.sleep(0.05)
+                self._pause()
 
                 self.smooth_battery(data)   # battery_voltage / battery_soc over the last reads
                 data["battery_power"] = battery_power
@@ -393,56 +426,56 @@ class DeyeInverter(InverterDriver):
 
             # Grid: 598-600 = grid voltage L1-L3 (598 alone drives online/outage detection)
             data["grid_voltage"] = self.read_register(598) / 10
-            time.sleep(0.05)
+            self._pause()
             if self.config.phases == 3:
                 data["grid_voltage_l1"] = data["grid_voltage"]
                 data["grid_voltage_l2"] = self.read_register(599) / 10
-                time.sleep(0.05)
+                self._pause()
                 data["grid_voltage_l3"] = self.read_register(600) / 10
-                time.sleep(0.05)
+                self._pause()
             data["grid_relay"] = self.read_register(552)
-            time.sleep(0.05)
+            self._pause()
             grid_volts = [data["grid_voltage"], data.get("grid_voltage_l2"), data.get("grid_voltage_l3")]
             data["grid_online"] = grid_online(grid_volts, relay_grid_connected(data["grid_relay"]))
             data["grid_state"] = grid_state(data["grid_online"], grid_volts)
             data["grid_phases_missing"] = grid_phases_missing(grid_volts)
             raw_grid_power = self.read_register(607)
             data["grid_power"] = to_signed(raw_grid_power)
-            time.sleep(0.05)
+            self._pause()
 
             # Load
             data["load_power"] = self.read_register(653)
-            time.sleep(0.05)
+            self._pause()
 
             # Daily stats
             data["daily_pv"] = self.read_register(529) / 10  # day PV energy (502 = inverter output)
-            time.sleep(0.05)
+            self._pause()
             data["daily_grid_import"] = self.read_register(520) / 10
-            time.sleep(0.05)
+            self._pause()
             data["daily_grid_export"] = self.read_register(521) / 10
-            time.sleep(0.05)
+            self._pause()
             data["daily_load"] = self.read_register(526) / 10
-            time.sleep(0.05)
+            self._pause()
 
             # Phase data (3-phase system)
             if self.config.phases == 3:
                 data["load_l1"] = self.read_register(650)
-                time.sleep(0.05)
+                self._pause()
                 data["load_l2"] = self.read_register(651)
-                time.sleep(0.05)
+                self._pause()
                 data["load_l3"] = self.read_register(652)
-                time.sleep(0.05)
+                self._pause()
 
                 data["voltage_l1"] = self.read_register(644) / 10
-                time.sleep(0.05)
+                self._pause()
                 data["voltage_l2"] = self.read_register(645) / 10
-                time.sleep(0.05)
+                self._pause()
                 data["voltage_l3"] = self.read_register(646) / 10
 
             # Generator (GEN/GRID2 port) — 3-phase uses register 667
             if self.config.has_generator:
                 data["generator_power"] = self.read_register(667)
-                time.sleep(0.05)
+                self._pause()
             else:
                 data["generator_power"] = 0
 
@@ -463,6 +496,7 @@ class DeyeInverter(InverterDriver):
             logger.warning("Error reading inverter data: %s", e)
             data["error"] = str(e)
         finally:
+            self._prefetched = {}
             self.disconnect()
 
         return data

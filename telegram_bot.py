@@ -154,6 +154,9 @@ BATTERY_LOW_REARM_SOC = 35
 
 # Inverter data older than this (from the dashboard's poller) is treated as unavailable
 INVERTER_DATA_MAX_AGE = 180  # seconds
+# getUpdates waits up to this long for a message (long polling): one request
+# per ~25 s instead of one every few seconds, and a reply comes at once
+LONG_POLL_SECONDS = 25
 
 
 class TelegramBot:
@@ -172,6 +175,9 @@ class TelegramBot:
         self.grid_daily_log_file = grid_daily_log_file
         self.weather_poller = weather_poller
         self.api_url = f"https://api.telegram.org/bot{token}"
+        # One kept-alive connection for all API calls (all from the bot's thread)
+        # instead of a new TLS handshake per request
+        self.http = requests.Session()
         self.last_update_id = 0
         self.message_index = 0
 
@@ -298,7 +304,7 @@ class TelegramBot:
         for attempt in range(4):  # up to 4 attempts: 0s, 2s, 4s, 8s
             backoff = 2 ** attempt
             try:
-                resp = requests.post(
+                resp = self.http.post(
                     f"{self.api_url}/sendMessage",
                     json=payload,
                     timeout=10,
@@ -335,10 +341,11 @@ class TelegramBot:
         updates = None
         for attempt in range(3):  # up to 3 attempts: 0s, 2s, 4s
             try:
-                resp = requests.get(
+                resp = self.http.get(
                     f"{self.api_url}/getUpdates",
-                    params={"offset": self.last_update_id + 1, "timeout": 0},
-                    timeout=10,
+                    params={"offset": self.last_update_id + 1, "timeout": LONG_POLL_SECONDS,
+                            "allowed_updates": '["message"]'},
+                    timeout=LONG_POLL_SECONDS + 10,
                 )
                 if resp.ok:
                     updates = resp.json().get("result", [])
@@ -796,8 +803,9 @@ class TelegramBot:
                     self.grid_up_since = None
                     logger.info("Grid restored notification sent (voltage=%.1fV)", grid_voltage)
 
-    def run(self, inverter_interval=120, command_interval=5):
-        """Main loop: poll commands frequently, check inverter less often."""
+    def run(self, inverter_interval=120, command_interval=1):
+        """Main loop: poll commands (each poll waits up to LONG_POLL_SECONDS for a
+        message), check the inverter every inverter_interval."""
         self._running = True
         self._poll_failures = 0
         logger.info(
