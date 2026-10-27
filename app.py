@@ -1309,7 +1309,7 @@ def reset_config():
         logger.info(".env not found — already in first-run mode")
 
     schedule_restart()
-    return jsonify({"status": "ok", "restarting": True})
+    return jsonify({"status": "ok", "restarting": True, "boot": BOOT_ID})
 
 
 @app.route("/api/config/discover")

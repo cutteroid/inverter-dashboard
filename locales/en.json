@@ -455,6 +455,7 @@
     "ready": "Ready! Reloading...",
     "taking_longer": "Taking longer than expected. Try refreshing manually.",
     "dashboard_title": "Dashboard name",
-    "dashboard_title_hint": "Shown at the top of the page and in the browser tab. Leave empty for the default."
+    "dashboard_title_hint": "Shown at the top of the page and in the browser tab. Leave empty for the default.",
+    "load_failed": "Couldn't load the current settings, so they can't be saved yet."
   }
 }

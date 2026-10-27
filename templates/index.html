@@ -1,4 +1,27 @@
 <!DOCTYPE html>
+{#- Blocks used more than once on the page -#}
+{% macro sparkline(colour, series) -%}
+<!-- Last 24 hours (/api/history, renderSparkline); tap: the larger chart -->
+            <div class="sparkline spark-{{ colour }}" data-series="{{ series }}" role="button" tabindex="0" data-i18n-attr="aria-label:history.open" hidden>
+                <svg viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area"/><path class="spark-line"/></svg>
+                <div class="spark-caption"><span class="spark-period" data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
+            </div>
+{%- endmacro %}
+{% macro alerts_footer() -%}
+<div class="alerts-footer">
+                <span class="alerts-summary" data-alerts-summary></span>
+                <span class="alerts-legend">
+                    <span class="alerts-legend-item"><span class="alerts-swatch status-alert"></span><span data-i18n="alerts.legend_alert">Air raid alert</span></span>
+                    <span class="alerts-legend-item"><span class="alerts-swatch status-threat"></span><span data-i18n="alerts.legend_threat">Threat</span></span>
+                </span>
+            </div>
+            <!-- Data source link + "not an official alert system" (required by NEPTUN's terms of use) -->
+            <div class="alerts-credit" data-alerts-credit hidden>
+                <span data-i18n="alerts.source_label">Source:</span>
+                <a href="https://neptun.in.ua/" target="_blank" rel="noopener" data-alerts-source="NEPTUN">NEPTUN</a><a href="https://alerts.in.ua/" target="_blank" rel="noopener" data-alerts-source="alerts.in.ua">alerts.in.ua</a> ·
+                <span data-i18n="alerts.disclaimer">not an official alert system</span>
+            </div>
+{%- endmacro %}
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -110,12 +133,12 @@
         <!-- Status Banners Container -->
         <div class="status-banner-container">
             <!-- Grid Status Banner -->
-            <div class="grid-status-banner" id="grid-banner">
-                <div class="grid-banner-header">
+            <div class="status-banner grid-status-banner" id="grid-banner">
+                <div class="status-banner-header grid-banner-header">
                     <div class="grid-status-icon icon-chip large" id="grid-status-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0zM12 17v5"/></svg></div>
-                    <div class="grid-status-text">
-                        <div class="grid-status-label" id="grid-status-label" data-i18n="grid_banner.label">Grid Status</div>
-                        <div class="grid-status-value" id="grid-status-value" data-i18n="grid_banner.checking">Checking...</div>
+                    <div class="status-banner-text grid-status-text">
+                        <div class="status-banner-label grid-status-label" id="grid-status-label" data-i18n="grid_banner.label">Grid Status</div>
+                        <div class="status-banner-value grid-status-value" id="grid-status-value" data-i18n="grid_banner.checking">Checking...</div>
                     </div>
                 </div>
                 <div class="grid-banner-bar" id="grid-banner-bar">
@@ -125,16 +148,16 @@
             </div>
 
             <!-- Battery Status Banner -->
-            <div class="battery-status-banner" id="battery-banner">
-                <div class="battery-banner-header">
+            <div class="status-banner battery-status-banner" id="battery-banner">
+                <div class="status-banner-header battery-banner-header">
                     <div class="battery-banner-icon icon-chip large" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="17" height="10" rx="2"/><path d="M22 11v2M11 9.5 9 12h3l-2 2.5"/></svg></div>
-                    <div class="battery-banner-text">
-                        <div class="battery-banner-label" data-i18n="battery_banner.label">Battery Level</div>
-                        <div class="battery-banner-value" id="battery-banner-value">--%</div>
+                    <div class="status-banner-text battery-banner-text">
+                        <div class="status-banner-label battery-banner-label" data-i18n="battery_banner.label">Battery Level</div>
+                        <div class="status-banner-value battery-banner-value" id="battery-banner-value">--%</div>
                     </div>
                     <!-- Estimated time: until full while charging, until the shutdown SOC during an outage -->
                     <div class="battery-banner-runtime" id="battery-banner-runtime" hidden>
-                        <div class="battery-banner-label" data-i18n="battery_banner.runtime_label">Lasts about</div>
+                        <div class="status-banner-label battery-banner-label" data-i18n="battery_banner.runtime_label">Lasts about</div>
                         <div class="battery-runtime-value" id="battery-runtime-value">--</div>
                     </div>
                 </div>
@@ -145,12 +168,12 @@
             </div>
 
             <!-- Generator Status Banner -->
-            <div class="generator-status-banner generator-off" id="generator-banner">
-                <div class="generator-banner-header">
+            <div class="status-banner generator-status-banner generator-off" id="generator-banner">
+                <div class="status-banner-header generator-banner-header">
                     <div class="generator-banner-icon icon-chip large" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16M3 21h12M4 10h10M14 8h1.5A1.5 1.5 0 0 1 17 9.5V16a1.5 1.5 0 0 0 3 0V8.5L17 5"/></svg></div>
-                    <div class="generator-banner-text">
-                        <div class="generator-banner-label" data-i18n="generator.title">Generator</div>
-                        <div class="generator-banner-value" id="generator-banner-value" data-i18n="generator.off">OFF</div>
+                    <div class="status-banner-text generator-banner-text">
+                        <div class="status-banner-label generator-banner-label" data-i18n="generator.title">Generator</div>
+                        <div class="status-banner-value generator-banner-value" id="generator-banner-value" data-i18n="generator.off">OFF</div>
                     </div>
                 </div>
                 <div class="generator-banner-status" id="generator-banner-status">--</div>
@@ -176,23 +199,11 @@
                 <span class="alerts-demo-badge" data-i18n="alerts.demo" hidden>Demo data</span>
             </div>
             <div class="alerts-map" data-alerts-map></div>
-            <div class="alerts-footer">
-                <span class="alerts-summary" data-alerts-summary></span>
-                <span class="alerts-legend">
-                    <span class="alerts-legend-item"><span class="alerts-swatch status-alert"></span><span data-i18n="alerts.legend_alert">Air raid alert</span></span>
-                    <span class="alerts-legend-item"><span class="alerts-swatch status-threat"></span><span data-i18n="alerts.legend_threat">Threat</span></span>
-                </span>
-            </div>
-            <!-- Data source link + "not an official alert system" (required by NEPTUN's terms of use) -->
-            <div class="alerts-credit" data-alerts-credit hidden>
-                <span data-i18n="alerts.source_label">Source:</span>
-                <a href="https://neptun.in.ua/" target="_blank" rel="noopener" data-alerts-source="NEPTUN">NEPTUN</a><a href="https://alerts.in.ua/" target="_blank" rel="noopener" data-alerts-source="alerts.in.ua">alerts.in.ua</a> ·
-                <span data-i18n="alerts.disclaimer">not an official alert system</span>
-            </div>
+            {{ alerts_footer() }}
         </div>
 
         <!-- Scroll hint for fullscreen mode -->
-        <button class="scroll-hint" onclick="document.querySelector('.dashboard').scrollIntoView({behavior:'smooth'})" title="Scroll to details" data-i18n-attr="title:toolbar.scroll_details">
+        <button type="button" class="scroll-hint" onclick="scrollToDetails()" title="Scroll to details" data-i18n-attr="title:toolbar.scroll_details">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M6 9l6 6 6-6"/>
             </svg>
@@ -218,11 +229,7 @@
                 <div class="metric-label" data-i18n="common.power_now">Power now</div>
                 <div class="metric-value positive" id="pv-total">--<span class="unit" data-i18n="units.w">W</span></div>
             </div>
-            <!-- Last 24 hours (/api/history, renderSparkline) -->
-            <div class="sparkline spark-solar" data-series="pv" role="button" tabindex="0" data-i18n-attr="aria-label:history.open" hidden>
-                <svg viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area"/><path class="spark-line"/></svg>
-                <div class="spark-caption"><span class="spark-period" data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
-            </div>
+            {{ sparkline("solar", "pv") }}
             <div class="stats-row">
                 <div class="stat">
                     <div class="value" id="pv1-power">--</div>
@@ -251,11 +258,7 @@
                     <div class="battery-text" id="battery-soc">--%</div>
                 </div>
             </div>
-            <!-- Last 24 hours (/api/history, renderSparkline) -->
-            <div class="sparkline spark-battery" data-series="soc" role="button" tabindex="0" data-i18n-attr="aria-label:history.open" hidden>
-                <svg viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area"/><path class="spark-line"/></svg>
-                <div class="spark-caption"><span class="spark-period" data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
-            </div>
+            {{ sparkline("battery", "soc") }}
             <div class="stats-row">
                 <div class="stat">
                     <div class="value" id="battery-voltage">--</div>
@@ -365,11 +368,7 @@
                 <div class="metric-label" data-i18n="common.power_now">Power now</div>
                 <div class="metric-value neutral" id="load-power">--<span class="unit" data-i18n="units.w">W</span></div>
             </div>
-            <!-- Last 24 hours (/api/history, renderSparkline) -->
-            <div class="sparkline spark-load" data-series="load" role="button" tabindex="0" data-i18n-attr="aria-label:history.open" hidden>
-                <svg viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area"/><path class="spark-line"/></svg>
-                <div class="spark-caption"><span class="spark-period" data-i18n="history.last_24h">Last 24 hours</span><span class="spark-extra"></span></div>
-            </div>
+            {{ sparkline("load", "load") }}
             <div class="stat">
                 <div class="value" id="daily-load">--</div>
                 <div class="label" data-i18n="consumption.today_usage">Today's Usage (kWh)</div>
@@ -526,19 +525,7 @@
                 <span class="alerts-demo-badge" data-i18n="alerts.demo" hidden>Demo data</span>
             </div>
             <div class="alerts-map" data-alerts-map></div>
-            <div class="alerts-footer">
-                <span class="alerts-summary" data-alerts-summary></span>
-                <span class="alerts-legend">
-                    <span class="alerts-legend-item"><span class="alerts-swatch status-alert"></span><span data-i18n="alerts.legend_alert">Air raid alert</span></span>
-                    <span class="alerts-legend-item"><span class="alerts-swatch status-threat"></span><span data-i18n="alerts.legend_threat">Threat</span></span>
-                </span>
-            </div>
-            <!-- Data source link + "not an official alert system" (required by NEPTUN's terms of use) -->
-            <div class="alerts-credit" data-alerts-credit hidden>
-                <span data-i18n="alerts.source_label">Source:</span>
-                <a href="https://neptun.in.ua/" target="_blank" rel="noopener" data-alerts-source="NEPTUN">NEPTUN</a><a href="https://alerts.in.ua/" target="_blank" rel="noopener" data-alerts-source="alerts.in.ua">alerts.in.ua</a> ·
-                <span data-i18n="alerts.disclaimer">not an official alert system</span>
-            </div>
+            {{ alerts_footer() }}
         </div>
 
         <!-- Smart Meter (MQTT, read-only) -->
@@ -598,7 +585,7 @@
     <!-- Settings Panel -->
     <!-- Onboarding Wizard Overlay -->
     <div class="onboarding-overlay {% if first_run %}{% else %}hidden{% endif %}" id="onboarding-overlay">
-        <div class="onboarding-card">
+        <div class="onboarding-card" role="dialog" aria-modal="true" aria-label="Configuration" data-i18n-attr="aria-label:settings.configuration">
             <div class="onboarding-progress" id="onboarding-progress">
                 <div class="step-circle active" data-step="1">1</div>
                 <div class="step-line" data-line="1"></div>
@@ -618,7 +605,7 @@
 
                 <!-- Inverter driver; only shown once there is more than one (DASHBOARD_CONFIG.inverterTypes) -->
                 <div class="onboarding-field" id="onb-type-field" hidden>
-                    <label data-i18n="onboarding.inverter_type">Inverter type</label>
+                    <label for="onb-type" data-i18n="onboarding.inverter_type">Inverter type</label>
                     <select class="onboarding-select" id="onb-type"></select>
                 </div>
 
@@ -629,15 +616,15 @@
                 <div class="discover-results" id="onb-discover-results"></div>
 
                 <div class="onboarding-field">
-                    <label data-i18n="onboarding.inverter_ip">Inverter IP Address *</label>
+                    <label for="onb-ip" data-i18n="onboarding.inverter_ip">Inverter IP Address *</label>
                     <input type="text" class="onboarding-input" id="onb-ip" placeholder="192.168.1.100">
                 </div>
                 <div class="onboarding-field">
-                    <label data-i18n="onboarding.logger_serial">Logger Serial Number *</label>
+                    <label for="onb-serial" data-i18n="onboarding.logger_serial">Logger Serial Number *</label>
                     <input type="text" class="onboarding-input" id="onb-serial" placeholder="2712345678">
                 </div>
                 <div class="onboarding-field">
-                    <label data-i18n="onboarding.phases">Inverter phases</label>
+                    <label for="onb-phases" data-i18n="onboarding.phases">Inverter phases</label>
                     <select class="onboarding-select" id="onb-phases">
                         <option value="" data-i18n="onboarding.phases_auto">Auto-detect</option>
                         <option value="1" data-i18n="onboarding.phases_1">1 phase</option>
@@ -655,52 +642,52 @@
                     <button class="onboarding-btn secondary" onclick="useMyLocation()" style="width:100%;" data-i18n="onboarding.use_location">Use My Location</button>
                 </div>
                 <div class="onboarding-field">
-                    <label data-i18n="onboarding.latitude">Latitude</label>
+                    <label for="onb-lat" data-i18n="onboarding.latitude">Latitude</label>
                     <input type="number" step="any" class="onboarding-input" id="onb-lat" placeholder="50.4501" value="50.4501">
                 </div>
                 <div class="onboarding-field">
-                    <label data-i18n="onboarding.longitude">Longitude</label>
+                    <label for="onb-lon" data-i18n="onboarding.longitude">Longitude</label>
                     <input type="number" step="any" class="onboarding-input" id="onb-lon" placeholder="30.5234" value="30.5234">
                 </div>
             </div>
 
             <!-- Step 3: Outage Provider -->
             <div class="onboarding-step" id="onb-step-3">
-                <h2 data-i18n="onboarding.step3_title">Outage Provider</h2>
+                <h2 id="onb-step3-title" data-i18n="onboarding.step3_title">Outage Provider</h2>
                 <p class="subtitle" data-i18n="onboarding.step3_subtitle">Get power outage schedules for your region. You can skip this step.</p>
 
-                <div class="onboarding-radio-group" id="onb-outage-radios">
-                    <div class="onboarding-radio selected" data-value="lvivoblenergo" onclick="selectOutageProvider(this)" data-i18n="onboarding.provider_lvivoblenergo">Lvivoblenergo</div>
-                    <div class="onboarding-radio" data-value="yasno" onclick="selectOutageProvider(this)" data-i18n="onboarding.provider_yasno">YASNO (DTEK)</div>
-                    <div class="onboarding-radio" data-value="dtek" onclick="selectOutageProvider(this)" data-i18n="onboarding.provider_dtek">DTEK regions</div>
-                    <div class="onboarding-radio" data-value="none" onclick="selectOutageProvider(this)" data-i18n="onboarding.provider_none">None (disable)</div>
+                <div class="onboarding-radio-group" id="onb-outage-radios" role="radiogroup" aria-labelledby="onb-step3-title">
+                    <div class="onboarding-radio selected" role="radio" aria-checked="true" tabindex="0" data-value="lvivoblenergo" onclick="selectOutageProvider(this)" data-i18n="onboarding.provider_lvivoblenergo">Lvivoblenergo</div>
+                    <div class="onboarding-radio" role="radio" aria-checked="false" tabindex="-1" data-value="yasno" onclick="selectOutageProvider(this)" data-i18n="onboarding.provider_yasno">YASNO (DTEK)</div>
+                    <div class="onboarding-radio" role="radio" aria-checked="false" tabindex="-1" data-value="dtek" onclick="selectOutageProvider(this)" data-i18n="onboarding.provider_dtek">DTEK regions</div>
+                    <div class="onboarding-radio" role="radio" aria-checked="false" tabindex="-1" data-value="none" onclick="selectOutageProvider(this)" data-i18n="onboarding.provider_none">None (disable)</div>
                 </div>
 
                 <div class="onboarding-conditional visible" id="onb-outage-lviv-fields">
                     <div class="onboarding-field">
-                        <label data-i18n="onboarding.outage_group">Outage Group (e.g. 1.1)</label>
+                        <label for="onb-outage-group" data-i18n="onboarding.outage_group">Outage Group (e.g. 1.1)</label>
                         <input type="text" class="onboarding-input" id="onb-outage-group" placeholder="1.1" value="1.1">
                     </div>
                 </div>
 
                 <div class="onboarding-conditional" id="onb-outage-yasno-fields">
                     <div class="onboarding-field">
-                        <label data-i18n="onboarding.yasno_region">Region ID (e.g. 25 = Kyiv)</label>
+                        <label for="onb-yasno-region" data-i18n="onboarding.yasno_region">Region ID (e.g. 25 = Kyiv)</label>
                         <input type="number" class="onboarding-input" id="onb-yasno-region" placeholder="25" value="25">
                     </div>
                     <div class="onboarding-field">
-                        <label data-i18n="onboarding.yasno_dso">DSO ID (e.g. 902 = DTEK Kyiv)</label>
+                        <label for="onb-yasno-dso" data-i18n="onboarding.yasno_dso">DSO ID (e.g. 902 = DTEK Kyiv)</label>
                         <input type="number" class="onboarding-input" id="onb-yasno-dso" placeholder="902" value="902">
                     </div>
                     <div class="onboarding-field">
-                        <label data-i18n="onboarding.yasno_group">Group (e.g. 2.1)</label>
+                        <label for="onb-yasno-group" data-i18n="onboarding.yasno_group">Group (e.g. 2.1)</label>
                         <input type="text" class="onboarding-input" id="onb-yasno-group" placeholder="2.1" value="2.1">
                     </div>
                 </div>
 
                 <div class="onboarding-conditional" id="onb-outage-dtek-fields">
                     <div class="onboarding-field">
-                        <label data-i18n="onboarding.dtek_region">Region</label>
+                        <label for="onb-dtek-region" data-i18n="onboarding.dtek_region">Region</label>
                         <select class="onboarding-select" id="onb-dtek-region">
                             <option value="kyiv-region" data-i18n="onboarding.dtek_regions.kyiv-region">Kyiv oblast (ДТЕК КРЕМ)</option>
                             <option value="kyiv" data-i18n="onboarding.dtek_regions.kyiv">Kyiv city</option>
@@ -709,7 +696,7 @@
                         </select>
                     </div>
                     <div class="onboarding-field">
-                        <label data-i18n="onboarding.dtek_group">Group (e.g. 4.2)</label>
+                        <label for="onb-dtek-group" data-i18n="onboarding.dtek_group">Group (e.g. 4.2)</label>
                         <input type="text" class="onboarding-input" id="onb-dtek-group" placeholder="1.1" value="1.1">
                     </div>
                 </div>
@@ -721,10 +708,10 @@
                 <p class="subtitle" data-i18n="onboarding.alerts_subtitle">Map with live alert statuses.</p>
 
                 <div class="onboarding-toggle-row">
-                    <span data-i18n="onboarding.alerts_enabled">Show air raid alerts</span>
-                    <div class="onboarding-toggle on" id="onb-alerts-toggle" onclick="toggleOnb(this, 'onb-alerts-fields')">
-                        <div class="toggle-knob"></div>
-                    </div>
+                    <span id="onb-alerts-toggle-label" data-i18n="onboarding.alerts_enabled">Show air raid alerts</span>
+                    <button type="button" class="onboarding-toggle on" id="onb-alerts-toggle" role="switch" aria-checked="true" aria-labelledby="onb-alerts-toggle-label" onclick="toggleOnb(this, 'onb-alerts-fields')">
+                        <span class="toggle-knob"></span>
+                    </button>
                 </div>
                 <div class="onboarding-conditional visible" id="onb-alerts-fields">
                     <div class="onboarding-field">
@@ -741,7 +728,7 @@
                         <div class="settings-hint" data-i18n="onboarding.alerts_token_hint">Request one at devs.alerts.in.ua. It stays on the server.</div>
                     </div>
                     <div class="onboarding-field">
-                        <label data-i18n="onboarding.alerts_region">Show on the map</label>
+                        <label for="onb-alerts-region" data-i18n="onboarding.alerts_region">Show on the map</label>
                         <select class="onboarding-select" id="onb-alerts-region">
                             <option value="" data-i18n="onboarding.alerts_whole_ukraine">Whole Ukraine</option>
                         </select>
@@ -763,18 +750,18 @@
 
                 <div style="border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 16px;">
                     <div class="onboarding-toggle-row">
-                        <span data-i18n="onboarding.generator_connected">Generator connected</span>
-                        <div class="onboarding-toggle" id="onb-gen-toggle" onclick="toggleOnb(this, 'onb-gen-fields')">
-                            <div class="toggle-knob"></div>
-                        </div>
+                        <span id="onb-gen-toggle-label" data-i18n="onboarding.generator_connected">Generator connected</span>
+                        <button type="button" class="onboarding-toggle" id="onb-gen-toggle" role="switch" aria-checked="false" aria-labelledby="onb-gen-toggle-label" onclick="toggleOnb(this, 'onb-gen-fields')">
+                            <span class="toggle-knob"></span>
+                        </button>
                     </div>
                     <div class="onboarding-conditional" id="onb-gen-fields">
                         <div class="onboarding-field">
-                            <label data-i18n="onboarding.fuel_rate">Fuel consumption (L/hour)</label>
+                            <label for="onb-gen-fuel" data-i18n="onboarding.fuel_rate">Fuel consumption (L/hour)</label>
                             <input type="number" step="0.1" class="onboarding-input" id="onb-gen-fuel" placeholder="0" value="0">
                         </div>
                         <div class="onboarding-field">
-                            <label data-i18n="onboarding.oil_change_date">Last oil change date</label>
+                            <label for="onb-gen-oil" data-i18n="onboarding.oil_change_date">Last oil change date</label>
                             <input type="date" class="onboarding-input" id="onb-gen-oil">
                         </div>
                     </div>
@@ -782,35 +769,41 @@
 
                 <div>
                     <div class="onboarding-toggle-row">
-                        <span data-i18n="onboarding.telegram_bot">Telegram Bot</span>
-                        <div class="onboarding-toggle" id="onb-tg-toggle" onclick="toggleOnb(this, 'onb-tg-fields')">
-                            <div class="toggle-knob"></div>
-                        </div>
+                        <span id="onb-tg-toggle-label" data-i18n="onboarding.telegram_bot">Telegram Bot</span>
+                        <button type="button" class="onboarding-toggle" id="onb-tg-toggle" role="switch" aria-checked="false" aria-labelledby="onb-tg-toggle-label" onclick="toggleOnb(this, 'onb-tg-fields')">
+                            <span class="toggle-knob"></span>
+                        </button>
                     </div>
                     <div class="onboarding-conditional" id="onb-tg-fields">
                         <div class="onboarding-field">
-                            <label data-i18n="onboarding.bot_token">Bot Token</label>
+                            <label for="onb-tg-token" data-i18n="onboarding.bot_token">Bot Token</label>
                             <input type="text" class="onboarding-input" id="onb-tg-token" placeholder="123456:ABC-DEF...">
                         </div>
                         <div class="onboarding-field">
-                            <label data-i18n="onboarding.allowed_users">Allowed User IDs (comma-separated)</label>
+                            <label for="onb-tg-users" data-i18n="onboarding.allowed_users">Allowed User IDs (comma-separated)</label>
                             <input type="text" class="onboarding-input" id="onb-tg-users" placeholder="12345678, 87654321">
                         </div>
                         <div class="onboarding-toggle-row">
-                            <span style="font-size:0.85rem;" data-i18n="onboarding.public_mode">Public mode (any user can query)</span>
-                            <div class="onboarding-toggle" id="onb-tg-public-toggle" onclick="toggleOnb(this)">
-                                <div class="toggle-knob"></div>
-                            </div>
+                            <span id="onb-tg-public-toggle-label" style="font-size:0.85rem;" data-i18n="onboarding.public_mode">Public mode (any user can query)</span>
+                            <button type="button" class="onboarding-toggle" id="onb-tg-public-toggle" role="switch" aria-checked="false" aria-labelledby="onb-tg-public-toggle-label" onclick="toggleOnb(this)">
+                                <span class="toggle-knob"></span>
+                            </button>
                         </div>
                     </div>
                 </div>
             </div>
 
             <!-- Navigation buttons -->
+            <!-- The saved settings couldn't be loaded: saving is off (it would write defaults) -->
+            <div class="onboarding-load-error" id="onb-load-error" role="alert" hidden>
+                <span data-i18n="onboarding.load_failed">Couldn't load the current settings, so they can't be saved yet.</span>
+                <button type="button" class="onboarding-btn secondary" onclick="loadOnboardingValues()" data-i18n="onboarding.retry">Retry</button>
+            </div>
             <div class="onboarding-btn-row">
                 <button class="onboarding-btn secondary" id="onb-back-btn" onclick="onboardingGoTo(onboardingStep - 1)" style="visibility:hidden;" data-i18n="onboarding.back">Back</button>
                 <div style="display:flex; gap:8px;">
-                    <button class="onboarding-btn secondary" id="onb-skip-btn" onclick="onboardingGoTo(onboardingStep + 1)" style="display:none;" data-i18n="onboarding.skip">Skip</button>
+                    <button type="button" class="onboarding-btn secondary" id="onb-cancel-btn" onclick="hideOnboarding()" data-i18n="common.cancel" hidden>Cancel</button>
+                    <button class="onboarding-btn secondary" id="onb-skip-btn" onclick="onboardingSkip()" style="display:none;" data-i18n="onboarding.skip">Skip</button>
                     <button class="onboarding-btn primary" id="onb-next-btn" onclick="onboardingNext()" data-i18n="onboarding.next">Next</button>
                 </div>
             </div>
@@ -820,13 +813,13 @@
     <!-- Restart Overlay -->
     <div class="restart-overlay hidden" id="restart-overlay">
         <div class="restart-spinner"></div>
-        <div class="restart-text" id="restart-text" data-i18n="onboarding.restarting_service">Restarting service...</div>
+        <div class="restart-text" id="restart-text" aria-live="polite" data-i18n="onboarding.restarting_service">Restarting service...</div>
     </div>
 
     <!-- Settings PIN prompt -->
     <div class="pin-overlay hidden" id="pin-overlay" onclick="if (event.target === this) closePinPrompt()">
-        <form class="pin-dialog" id="pin-dialog" onsubmit="submitSettingsPin(); return false;">
-            <h3 data-i18n="pin.title">Enter settings PIN</h3>
+        <form class="pin-dialog" id="pin-dialog" role="dialog" aria-modal="true" aria-labelledby="pin-title" onsubmit="submitSettingsPin(); return false;">
+            <h3 id="pin-title" data-i18n="pin.title">Enter settings PIN</h3>
             <input type="password" class="pin-input" id="pin-input" inputmode="numeric"
                    autocomplete="off" maxlength="12" aria-label="Settings PIN" data-i18n-attr="aria-label:pin.label">
             <div class="pin-error" id="pin-error"></div>

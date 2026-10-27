@@ -48,10 +48,27 @@ function i18nLocale() {
 // switch re-translates it without waiting for the next data refresh.
 function setI18nText(el, key, params) {
     if (!el) return;
+    var paramsJson = params ? JSON.stringify(params) : null;
+    var text = t(key, params);
+    // Unchanged (most calls from the 1-second timers): no DOM writes
+    if (el.getAttribute('data-i18n') === key && el.getAttribute('data-i18n-params') === paramsJson &&
+        el.textContent === text) return;
     el.setAttribute('data-i18n', key);
-    if (params) el.setAttribute('data-i18n-params', JSON.stringify(params));
+    if (paramsJson) el.setAttribute('data-i18n-params', paramsJson);
     else el.removeAttribute('data-i18n-params');
-    el.textContent = t(key, params);
+    el.textContent = text;
+}
+
+// innerHTML / textContent written only when different from the last write: the
+// 1-second timers would otherwise rebuild the same content every second
+function setHtmlIfChanged(el, html) {
+    if (el._lastHtml === html) return;
+    el.innerHTML = html;
+    el._lastHtml = html;
+}
+
+function setTextIfChanged(el, text) {
+    setHtmlIfChanged(el, escapeHtml(text));
 }
 
 // Set untranslated text (numbers, values) on an element that may carry a key.
@@ -120,7 +137,7 @@ function refreshTranslatedContent() {
         function() { updateClock(); },
         function() { renderOutageLog(); },
         function() { renderCardSettings(); },
-        function() { updateDashboard(); },
+        function() { if (latestInverterData) renderDashboard(latestInverterData); },
     ];
     refreshers.forEach(function(fn) {
         try { fn(); } catch (e) { console.error('i18n refresh failed:', e); }
@@ -170,6 +187,7 @@ function applyInverterConfig(config) {
         if (batteryCard) batteryCard.style.display = 'none';
         var batteryBanner = document.getElementById('battery-banner');
         if (batteryBanner) batteryBanner.style.display = 'none';
+        document.body.classList.add('no-battery');   // fullscreen: no empty cell for it
     }
 
     // Single PV string: hide PV2 stat
@@ -378,6 +396,10 @@ function scheduleReturnToTop() {
     returnToTopTimer = setTimeout(returnToTop, RETURN_TO_TOP_MS);
 }
 
+function scrollToDetails() {
+    document.querySelector('.dashboard').scrollIntoView({ behavior: isLowPower() ? 'auto' : 'smooth' });
+}
+
 function returnToTop() {
     returnToTopTimer = null;
     if (!returnToTopOn || !document.body.classList.contains('fullscreen-mode')) return;
@@ -414,8 +436,18 @@ function apiFetch(url, options) {
     if (typeof AbortController === 'undefined' || options.signal) return fetch(url, options);
     var controller = new AbortController();
     var timer = setTimeout(function() { controller.abort(); }, API_TIMEOUT_MS);
-    return fetch(url, Object.assign({}, options, { signal: controller.signal }))
-        .finally(function() { clearTimeout(timer); });
+    return fetch(url, Object.assign({}, options, { signal: controller.signal })).then(function(response) {
+        // The timeout runs until the body is read too: a body that stalls would
+        // otherwise hold the connection with no timeout at all
+        var json = response.json.bind(response);
+        response.json = function() {
+            return json().finally(function() { clearTimeout(timer); });
+        };
+        return response;
+    }, function(error) {
+        clearTimeout(timer);
+        throw error;
+    });
 }
 
 function settingsFetch(url, options) {
@@ -427,8 +459,11 @@ function settingsFetch(url, options) {
 // What to do after a correct PIN (unlock server settings, clear stats, ...)
 var pinSuccessAction = null;
 
+var pinReturnFocus = null;   // the element focused before the prompt, focused again after it
+
 function showPinPrompt(onSuccess) {
     pinSuccessAction = onSuccess || null;
+    pinReturnFocus = document.activeElement;
     var input = document.getElementById('pin-input');
     input.value = '';
     document.getElementById('pin-error').textContent = '';
@@ -439,6 +474,8 @@ function showPinPrompt(onSuccess) {
 
 function closePinPrompt() {
     document.getElementById('pin-overlay').classList.add('hidden');
+    if (pinReturnFocus && pinReturnFocus.focus && document.contains(pinReturnFocus)) pinReturnFocus.focus();
+    pinReturnFocus = null;
 }
 
 function submitSettingsPin() {
@@ -482,8 +519,11 @@ function submitSettingsPin() {
 }
 
 document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && !document.getElementById('pin-overlay').classList.contains('hidden')) {
+    if (e.key !== 'Escape') return;
+    if (!document.getElementById('pin-overlay').classList.contains('hidden')) {
         closePinPrompt();
+    } else if (onboardingEditMode && !document.getElementById('onboarding-overlay').classList.contains('hidden')) {
+        hideOnboarding();   // the editor; a first start has nothing to go back to
     }
 });
 
@@ -527,11 +567,13 @@ function closeNotificationSetup() {
 
 function showNotification(title, body) {
     if (notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
-        new Notification(title, {
-            body: body,
-            icon: '⚡',
-            requireInteraction: true
-        });
+        try {
+            new Notification(title, { body: body, requireInteraction: true });
+        } catch (e) {
+            // Android Chrome only shows notifications through a service worker
+            // ("Illegal constructor"): skip it rather than break the update
+            console.warn('Notification not shown:', e);
+        }
     }
 }
 
@@ -627,7 +669,7 @@ function clearPhaseStats() {
 }
 
 function updatePhaseDisplay(data) {
-    if (!data.load_l1) return;
+    if (data.load_l1 == null) return;   // 0 W on L1 is a reading too
 
     const l1 = data.load_l1 || 0;
     const l2 = data.load_l2 || 0;
@@ -737,15 +779,16 @@ function updateBatteryBanner(data) {
     const statusEl = document.getElementById('battery-banner-status');
 
     const soc = data.battery_soc || 0;
-    const current = data.battery_current || 0;
-    const power = Math.abs(data.battery_power || 0);
+    const batteryPower = data.battery_power || 0;   // > 0 charging
+    const power = Math.abs(batteryPower);
 
     // Update value and fill
     valueEl.textContent = soc + '%';
     fillEl.style.width = soc + '%';
 
     // Update status text
-    var flow = current > 0.5 ? 'charging' : current < -0.5 ? 'discharging' : null;
+    // By power with the card's idle margin (a current threshold is ~200 W on HV batteries)
+    var flow = batteryPower > BATTERY_IDLE_W ? 'charging' : batteryPower < -BATTERY_IDLE_W ? 'discharging' : null;
     statusEl.innerHTML = flow
         ? t('battery_banner.' + flow, { power: batteryPowerHtml(power) })
         : escapeHtml(t('battery_banner.idle'));
@@ -868,6 +911,160 @@ function renderLiveStatus() {
 
 setInterval(renderLiveStatus, 1000);
 
+// last_updated of the readings the cards show (renderDashboard)
+var dashboardRenderedFor = null;
+
+// Cards, banners and alerts from one set of inverter readings
+function renderDashboard(data) {
+    // Solar
+    document.getElementById('pv-total').innerHTML = fmt(data.pv_total_power, 0) + '<span class="unit">' + t('units.w') + '</span>';
+    document.getElementById('pv1-power').textContent = fmt(data.pv1_power, 0);
+    if (!inverterConfig || inverterConfig.pv_strings >= 2) {
+        document.getElementById('pv2-power').textContent = fmt(data.pv2_power, 0);
+    }
+    document.getElementById('daily-pv').textContent = fmt(data.daily_pv, 1);
+
+    // Battery
+    if (!inverterConfig || inverterConfig.has_battery !== false) {
+        document.getElementById('battery-soc').textContent = fmt(data.battery_soc, 0) + '%';
+        document.getElementById('battery-fill').style.width = (data.battery_soc || 0) + '%';
+        document.getElementById('battery-voltage').textContent = fmt(data.battery_voltage, 1);
+        document.getElementById('battery-current').textContent = fmt(data.battery_current, 1);
+        // LiFePO4: below 5 °C charging slows (below 0 °C it harms the cells), above 45 °C too hot
+        var tempEl = document.getElementById('battery-temperature');
+        var temp = data.battery_temperature;
+        tempEl.textContent = fmt(temp, 1);
+        tempEl.classList.toggle('battery-temp-cold', typeof temp === 'number' && temp < 5);
+        tempEl.classList.toggle('battery-temp-hot', typeof temp === 'number' && temp > 45);
+        document.getElementById('battery-power').textContent = fmt(Math.abs(data.battery_power), 0);
+        setI18nText(document.getElementById('battery-status'), 'battery.status_power', { status: batteryStatusText(data.battery_status) });
+    }
+
+    // Grid
+    const gridPowerEl = document.getElementById('grid-power');
+    gridPowerEl.innerHTML = fmt(Math.abs(data.grid_power), 0) + '<span class="unit">' + t('units.w') + '</span>';
+    gridPowerEl.className = 'metric-value ' + (data.grid_power > 0 ? 'negative' : data.grid_power < 0 ? 'positive' : 'neutral');
+    // The number has no sign: the label says which way the power flows
+    setI18nText(document.getElementById('grid-power-label'),
+        data.grid_power > 0 ? 'grid.import_now' : data.grid_power < 0 ? 'grid.export_now' : 'common.power_now');
+    document.getElementById('grid-voltage').textContent = fmt(data.grid_voltage, 1);
+    // 3-phase: one value per phase instead of L1 only
+    var gridPhases = data.grid_voltage_l2 != null;
+    document.getElementById('grid-voltage-single').hidden = gridPhases;
+    document.getElementById('grid-voltage-phases').hidden = !gridPhases;
+    if (gridPhases) {
+        ['l1', 'l2', 'l3'].forEach(function(p) {
+            var el = document.getElementById('grid-voltage-' + p);
+            el.textContent = fmt(data['grid_voltage_' + p], 0);
+            el.classList.toggle('grid-phase-down', (data['grid_voltage_' + p] || 0) < 100);
+        });
+    }
+    document.getElementById('daily-import').textContent = fmt(data.daily_grid_import, 1);
+    document.getElementById('daily-export').textContent = fmt(data.daily_grid_export, 1);
+
+    // Load
+    document.getElementById('load-power').innerHTML = fmt(data.load_power, 0) + '<span class="unit">' + t('units.w') + '</span>';
+    document.getElementById('daily-load').textContent = fmt(data.daily_load, 1);
+
+    renderPowerFlow(data);
+
+    // ===== CARD STATES (border + glow, see .card.* in the CSS) =====
+
+    // Solar: producing
+    const solarCard = document.getElementById('solar-card');
+    if (data.pv_total_power > 10) {
+        solarCard.classList.add('solar-active');
+    } else {
+        solarCard.classList.remove('solar-active');
+    }
+
+    // Battery: charging / discharging, by power like the card's text (a
+    // few watts either way count as idle, as for the time estimates)
+    if (!inverterConfig || inverterConfig.has_battery !== false) {
+        const batteryCard = document.getElementById('battery-card');
+        const batteryPower = data.battery_power || 0;
+        batteryCard.classList.toggle('battery-charging', batteryPower > BATTERY_IDLE_W);
+        batteryCard.classList.toggle('battery-discharging', batteryPower < -BATTERY_IDLE_W);
+    }
+
+    // Grid: importing / exporting
+    const gridCard = document.getElementById('grid-card');
+    if (Math.abs(data.grid_power) > 50) {
+        gridCard.classList.add('grid-active');
+    } else {
+        gridCard.classList.remove('grid-active');
+    }
+
+    // Consumption: using power (neutral) / high load (red)
+    const loadCard = document.getElementById('consumption-card');
+    loadCard.classList.remove('load-active', 'load-high');
+    if (data.load_power > 3000) {
+        loadCard.classList.add('load-high');
+    } else if (data.load_power > 100) {
+        loadCard.classList.add('load-active');
+    }
+
+    renderHealth(data);
+
+    // Grid Status Banner
+    const gridBanner = document.getElementById('grid-banner');
+    const gridStatusValue = document.getElementById('grid-status-value');
+    const gridStatusLabel = document.getElementById('grid-status-label');
+    const isOnline = gridIsOnline(data);
+
+    // On battery either way, but say why: some phases missing, grid out of
+    // range (all phases there) or no grid at all
+    var gridState = isOnline ? 'online' : (data.grid_state || 'outage');
+    gridBanner.classList.toggle('online', isOnline);
+    gridBanner.classList.toggle('offline', !isOnline);
+    gridBanner.classList.toggle('partial', gridState === 'partial' || gridState === 'out_of_range');
+    if (isOnline) {
+        setI18nText(gridStatusValue, 'grid_banner.online');
+        setI18nText(gridStatusLabel, 'grid_banner.label');
+    } else if (gridState === 'partial') {
+        var missing = (data.grid_phases_missing || []).map(function(n) { return 'L' + n; });
+        setI18nText(gridStatusValue, missing.length > 1 ? 'grid_banner.phases_down' : 'grid_banner.phase_down',
+            { phases: missing.join(', ') });
+        setI18nText(gridStatusLabel, 'grid_banner.partial_label');
+    } else if (gridState === 'out_of_range') {
+        setI18nText(gridStatusValue, 'grid_banner.on_battery');
+        setI18nText(gridStatusLabel, 'grid_banner.out_of_range_label');
+    } else {
+        setI18nText(gridStatusValue, 'grid_banner.outage');
+        setI18nText(gridStatusLabel, 'grid_banner.no_power');
+    }
+
+    // Handle grid state changes (notification)
+    handleGridStateChange(isOnline, data.grid_voltage);
+
+    // Update phase display (3-phase only)
+    if (!inverterConfig || inverterConfig.phases === 3) {
+        updatePhaseDisplay(data);
+    }
+
+    // Update battery banner (prominent display)
+    if (!inverterConfig || inverterConfig.has_battery !== false) {
+        updateBatteryBanner(data);
+    }
+
+    // Update generator power from real-time inverter data
+    if (inverterConfig && inverterConfig.has_generator) {
+        var genPower = data.generator_power || 0;
+        var genPowerEl = document.getElementById('generator-power');
+        if (genPowerEl) genPowerEl.innerHTML = genPower + '<span class="unit">' + t('units.w') + '</span>';
+        // Update banner with real-time power
+        if (generatorData) {
+            generatorData.power = genPower;
+            generatorData.running = genPower > 0;
+        }
+        updateGeneratorBanner(generatorData || {power: genPower, today_runtime_hours: 0});
+        if (generatorData) updateGeneratorCard(generatorData);
+    }
+
+    // Red tint when the grid is down and the battery is low
+    updateBatteryOverlay(data);
+}
+
 function updateDashboard() {
     if (dashboardRequestInFlight) return;
     dashboardRequestInFlight = true;
@@ -903,153 +1100,11 @@ function updateDashboard() {
             }
 
             latestInverterData = data;
-
-            // Solar
-            document.getElementById('pv-total').innerHTML = data.pv_total_power + '<span class="unit">' + t('units.w') + '</span>';
-            document.getElementById('pv1-power').textContent = data.pv1_power;
-            if (!inverterConfig || inverterConfig.pv_strings >= 2) {
-                document.getElementById('pv2-power').textContent = data.pv2_power;
-            }
-            document.getElementById('daily-pv').textContent = fmt(data.daily_pv, 1);
-
-            // Battery
-            if (!inverterConfig || inverterConfig.has_battery !== false) {
-                document.getElementById('battery-soc').textContent = data.battery_soc + '%';
-                document.getElementById('battery-fill').style.width = data.battery_soc + '%';
-                document.getElementById('battery-voltage').textContent = fmt(data.battery_voltage, 1);
-                document.getElementById('battery-current').textContent = fmt(data.battery_current, 1);
-                // LiFePO4: below 5 °C charging slows (below 0 °C it harms the cells), above 45 °C too hot
-                var tempEl = document.getElementById('battery-temperature');
-                var temp = data.battery_temperature;
-                tempEl.textContent = fmt(temp, 1);
-                tempEl.classList.toggle('battery-temp-cold', typeof temp === 'number' && temp < 5);
-                tempEl.classList.toggle('battery-temp-hot', typeof temp === 'number' && temp > 45);
-                document.getElementById('battery-power').textContent = Math.abs(data.battery_power);
-                setI18nText(document.getElementById('battery-status'), 'battery.status_power', { status: batteryStatusText(data.battery_status) });
-            }
-
-            // Grid
-            const gridPowerEl = document.getElementById('grid-power');
-            gridPowerEl.innerHTML = Math.abs(data.grid_power) + '<span class="unit">' + t('units.w') + '</span>';
-            gridPowerEl.className = 'metric-value ' + (data.grid_power > 0 ? 'negative' : data.grid_power < 0 ? 'positive' : 'neutral');
-            // The number has no sign: the label says which way the power flows
-            setI18nText(document.getElementById('grid-power-label'),
-                data.grid_power > 0 ? 'grid.import_now' : data.grid_power < 0 ? 'grid.export_now' : 'common.power_now');
-            document.getElementById('grid-voltage').textContent = fmt(data.grid_voltage, 1);
-            // 3-phase: one value per phase instead of L1 only
-            var gridPhases = data.grid_voltage_l2 != null;
-            document.getElementById('grid-voltage-single').hidden = gridPhases;
-            document.getElementById('grid-voltage-phases').hidden = !gridPhases;
-            if (gridPhases) {
-                ['l1', 'l2', 'l3'].forEach(function(p) {
-                    var el = document.getElementById('grid-voltage-' + p);
-                    el.textContent = fmt(data['grid_voltage_' + p], 0);
-                    el.classList.toggle('grid-phase-down', (data['grid_voltage_' + p] || 0) < 100);
-                });
-            }
-            document.getElementById('daily-import').textContent = fmt(data.daily_grid_import, 1);
-            document.getElementById('daily-export').textContent = fmt(data.daily_grid_export, 1);
-
-            // Load
-            document.getElementById('load-power').innerHTML = data.load_power + '<span class="unit">' + t('units.w') + '</span>';
-            document.getElementById('daily-load').textContent = fmt(data.daily_load, 1);
-
-            renderPowerFlow(data);
-
-            // ===== CARD STATES (border + glow, see .card.* in the CSS) =====
-
-            // Solar: producing
-            const solarCard = document.getElementById('solar-card');
-            if (data.pv_total_power > 10) {
-                solarCard.classList.add('solar-active');
-            } else {
-                solarCard.classList.remove('solar-active');
-            }
-
-            // Battery: charging / discharging, by power like the card's text (a
-            // few watts either way count as idle, as for the time estimates)
-            if (!inverterConfig || inverterConfig.has_battery !== false) {
-                const batteryCard = document.getElementById('battery-card');
-                const batteryPower = data.battery_power || 0;
-                batteryCard.classList.toggle('battery-charging', batteryPower > BATTERY_IDLE_W);
-                batteryCard.classList.toggle('battery-discharging', batteryPower < -BATTERY_IDLE_W);
-            }
-
-            // Grid: importing / exporting
-            const gridCard = document.getElementById('grid-card');
-            if (Math.abs(data.grid_power) > 50) {
-                gridCard.classList.add('grid-active');
-            } else {
-                gridCard.classList.remove('grid-active');
-            }
-
-            // Consumption: using power (neutral) / high load (red)
-            const loadCard = document.getElementById('consumption-card');
-            loadCard.classList.remove('load-active', 'load-high');
-            if (data.load_power > 3000) {
-                loadCard.classList.add('load-high');
-            } else if (data.load_power > 100) {
-                loadCard.classList.add('load-active');
-            }
-
-            renderHealth(data);
-
-            // Grid Status Banner
-            const gridBanner = document.getElementById('grid-banner');
-            const gridStatusValue = document.getElementById('grid-status-value');
-            const gridStatusLabel = document.getElementById('grid-status-label');
-            const isOnline = gridIsOnline(data);
-
-            // On battery either way, but say why: some phases missing, grid out of
-            // range (all phases there) or no grid at all
-            var gridState = isOnline ? 'online' : (data.grid_state || 'outage');
-            gridBanner.classList.toggle('online', isOnline);
-            gridBanner.classList.toggle('offline', !isOnline);
-            gridBanner.classList.toggle('partial', gridState === 'partial' || gridState === 'out_of_range');
-            if (isOnline) {
-                setI18nText(gridStatusValue, 'grid_banner.online');
-                setI18nText(gridStatusLabel, 'grid_banner.label');
-            } else if (gridState === 'partial') {
-                var missing = (data.grid_phases_missing || []).map(function(n) { return 'L' + n; });
-                setI18nText(gridStatusValue, missing.length > 1 ? 'grid_banner.phases_down' : 'grid_banner.phase_down',
-                    { phases: missing.join(', ') });
-                setI18nText(gridStatusLabel, 'grid_banner.partial_label');
-            } else if (gridState === 'out_of_range') {
-                setI18nText(gridStatusValue, 'grid_banner.on_battery');
-                setI18nText(gridStatusLabel, 'grid_banner.out_of_range_label');
-            } else {
-                setI18nText(gridStatusValue, 'grid_banner.outage');
-                setI18nText(gridStatusLabel, 'grid_banner.no_power');
-            }
-
-            // Handle grid state changes (notification)
-            handleGridStateChange(isOnline, data.grid_voltage);
-
-            // Update phase display (3-phase only)
-            if (!inverterConfig || inverterConfig.phases === 3) {
-                updatePhaseDisplay(data);
-            }
-
-            // Update battery banner (prominent display)
-            if (!inverterConfig || inverterConfig.has_battery !== false) {
-                updateBatteryBanner(data);
-            }
-
-            // Update generator power from real-time inverter data
-            if (inverterConfig && inverterConfig.has_generator) {
-                var genPower = data.generator_power || 0;
-                var genPowerEl = document.getElementById('generator-power');
-                if (genPowerEl) genPowerEl.innerHTML = genPower + '<span class="unit">' + t('units.w') + '</span>';
-                // Update banner with real-time power
-                if (generatorData) {
-                    generatorData.power = genPower;
-                    generatorData.running = genPower > 0;
-                }
-                updateGeneratorBanner(generatorData || {power: genPower, today_runtime_hours: 0});
-            }
-
-            // Red tint when the grid is down and the battery is low
-            updateBatteryOverlay(data);
+            // The server reads the inverter every 30 s: the polls in between bring
+            // the same readings, which only refresh the status above
+            if (data.last_updated && data.last_updated === dashboardRenderedFor) return;
+            dashboardRenderedFor = data.last_updated;
+            renderDashboard(data);
 
         })
         .catch(error => {
@@ -1089,7 +1144,7 @@ var SPARK_W = 300, SPARK_H = 48;   // the SVG's viewBox
 var historyData = null;
 
 function loadHistory() {
-    fetch('/api/history')
+    apiFetch('/api/history')
         .then(function(response) { return response.json(); })
         .then(function(data) {
             historyData = data;
@@ -1310,17 +1365,29 @@ function renderHistoryDetails() {
         if (e.target === overlay) closeHistoryDetails();
     });
     // Touch or hover the chart: the value at that time
+    // Redrawn at most once a frame, and only when the finger reaches another
+    // point (a move fires many events; each redraw rebuilds the whole chart)
+    var frame = null, shownPoint = null;
     function touched(e) {
         if (!detailsSpark || !detailsRange) return;
         var rect = chart.getBoundingClientRect();
         var vx = (e.clientX - rect.left) / rect.width * DETAILS_W;
         var f = (vx - DETAILS_LEFT) / (DETAILS_W - DETAILS_RIGHT - DETAILS_LEFT);
         detailsAt = detailsRange.start + Math.min(1, Math.max(0, f)) * detailsRange.span;
-        renderHistoryDetails();
+        var bucket = historyData ? Math.round(detailsAt / historyData.bucket_seconds) : null;
+        if (bucket === shownPoint || frame) return;
+        frame = requestAnimationFrame(function() {
+            frame = null;
+            shownPoint = bucket;
+            renderHistoryDetails();
+        });
     }
     chart.addEventListener('pointerdown', touched);
     chart.addEventListener('pointermove', touched);
-    chart.addEventListener('pointerleave', function() {
+    chart.addEventListener('pointerleave', function(e) {
+        // A mouse leaving the chart: back to the latest value. A finger lifted
+        // (touch fires pointerleave too): keep the value it showed
+        if (e.pointerType !== 'mouse') return;
         detailsAt = null;
         renderHistoryDetails();
     });
@@ -1342,8 +1409,10 @@ function fetchOutageSchedule() {
         .then(function(r) { return r.json(); })
         .then(function(data) {
             // "unknown" = the server has no current schedule yet (e.g. just after
-            // midnight, before its next fetch): keep the one on screen meanwhile
-            if (data.status === 'unknown' && outageScheduleData && outageScheduleData.days) return;
+            // midnight, before its next fetch): keep the one on screen meanwhile,
+            // as long as it still has today in it
+            if (data.status === 'unknown' && outageScheduleData &&
+                plannedDay(outageScheduleData, 0)) return;
             outageScheduleData = data;
             updateOutageInfo();
             renderPlannedOutages();
@@ -1355,10 +1424,11 @@ function fetchOutageSchedule() {
 
 // ===== PLANNED OUTAGES CARD =====
 
+// For text and attribute values alike (title="...", data-...="...")
+var HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
 function escapeHtml(text) {
-    var div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return String(text == null ? '' : text).replace(/[&<>"']/g, function(c) { return HTML_ESCAPES[c]; });
 }
 
 // Window times are local ISO strings ("2026-10-17T08:00:00"); an end at
@@ -1377,6 +1447,14 @@ function formatPlannedDuration(mins) {
     var h = Math.floor(mins / 60), m = mins % 60;
     if (h && m) return t('duration.hm', { h: h, m: m });
     return h ? t('duration.h', { h: h }) : t('duration.m', { m: m });
+}
+
+// The schedule's entry for today (offset 0) or tomorrow (1) by the browser's date, or null
+function plannedDay(d, offset) {
+    var date = new Date();
+    date.setDate(date.getDate() + offset);
+    var key = localDateString(date);
+    return ((d && d.days) || []).filter(function(day) { return day.date === key; })[0] || null;
 }
 
 function renderPlannedDay(label, day, now) {
@@ -1439,10 +1517,10 @@ function renderPlannedOutages() {
         { container: document.getElementById('planned-outages-banner'),
           body: document.getElementById('planned-outages-banner-body'),
           source: document.getElementById('planned-outages-banner-source') },
-    ].filter(function(t) { return t.container && t.body; });
+    ].filter(function(target) { return target.container && target.body; });
 
     if (d && d.status === 'disabled') {
-        targets.forEach(function(t) { t.container.style.display = 'none'; });
+        targets.forEach(function(target) { target.container.style.display = 'none'; });
         document.body.classList.add('outages-disabled');
         return;
     }
@@ -1454,12 +1532,14 @@ function renderPlannedOutages() {
         html = '<div class="planned-none">' + t('planned.unavailable') + '</div>' +
             '<div class="planned-error-detail">' + escapeHtml(d.error || '') + '</div>';
     } else {
+        // Days by their date, not their place in the list: after midnight an
+        // older schedule's first day is yesterday, and its second today
         var now = new Date();
-        var days = d.days || [];
-        html = '';
-        if (days[0]) html += renderPlannedDay(t('planned.today'), days[0], now);
-        if (days[1]) {
-            html += renderPlannedDay(t('planned.tomorrow'), days[1], now);
+        var today = plannedDay(d, 0), tomorrow = plannedDay(d, 1);
+        html = today ? renderPlannedDay(t('planned.today'), today, now)
+                     : '<div class="planned-none">' + t('planned.loading') + '</div>';
+        if (tomorrow) {
+            html += renderPlannedDay(t('planned.tomorrow'), tomorrow, now);
         } else {
             html += '<div class="planned-day"><div class="planned-day-header"><span class="planned-day-name">' + t('planned.tomorrow') + '</span></div>' +
                 '<div class="planned-none">' + t('planned.not_published') + '</div></div>';
@@ -1470,9 +1550,9 @@ function renderPlannedOutages() {
     var sourceHtml = (d && d.provider)
         ? t('planned.source', { provider: '<span class="source-name">' + escapeHtml(d.provider) + '</span>' })
         : '';
-    targets.forEach(function(t) {
-        t.body.innerHTML = html;
-        if (t.source) t.source.innerHTML = sourceHtml;
+    targets.forEach(function(target) {
+        target.body.innerHTML = html;
+        if (target.source) target.source.innerHTML = sourceHtml;
     });
 }
 
@@ -1484,7 +1564,7 @@ function outageTimeHtml(ms) {
 function updateOutageInfo() {
     var el = document.getElementById('grid-outage-info');
     var d = outageScheduleData;
-    if (!el || !d) { if (el) el.textContent = ''; return; }
+    if (!el || !d) { if (el) setTextIfChanged(el, ''); return; }
     el.title = d.status === 'error' ? (d.error || '') : '';
     var now = new Date();
     var gridBanner = document.getElementById('grid-banner');
@@ -1496,16 +1576,16 @@ function updateOutageInfo() {
         // itself rather than assuming an outage.
         if (d.status === 'active' && d.end_time) {
             var activeLeft = new Date(d.end_time) - now;
-            el.innerHTML = activeLeft > 0 ? t('outage_info.scheduled_now', { time: outageTimeHtml(activeLeft) }) : '';
+            setHtmlIfChanged(el, activeLeft > 0 ? t('outage_info.scheduled_now', { time: outageTimeHtml(activeLeft) }) : '');
         } else if (d.status === 'upcoming' && d.upcoming_windows && d.upcoming_windows.length > 0) {
             var untilStart = new Date(d.upcoming_windows[0].start) - now;
-            el.innerHTML = untilStart > 0 ? t('outage_info.outage_in', { time: outageTimeHtml(untilStart) }) : '';
+            setHtmlIfChanged(el, untilStart > 0 ? t('outage_info.outage_in', { time: outageTimeHtml(untilStart) }) : '');
         } else if (d.status === 'clear') {
-            el.textContent = t('outage_info.no_outages_today');
+            setTextIfChanged(el, t('outage_info.no_outages_today'));
         } else if (d.status === 'error') {
-            el.textContent = t('outage_info.unavailable');
+            setTextIfChanged(el, t('outage_info.unavailable'));
         } else {
-            el.textContent = '';
+            setTextIfChanged(el, '');
         }
     } else if (gridOffline) {
         // Grid is off — show when it comes back
@@ -1513,13 +1593,13 @@ function updateOutageInfo() {
             var end = new Date(d.end_time);
             var diff = end - now;
             if (diff > 0) {
-                el.innerHTML = t('outage_info.back_in', { time: outageTimeHtml(diff) });
+                setHtmlIfChanged(el, t('outage_info.back_in', { time: outageTimeHtml(diff) }));
             } else {
-                el.textContent = t('outage_info.back_soon');
+                setTextIfChanged(el, t('outage_info.back_soon'));
             }
         } else {
             // Unscheduled outage (battery level and runtime left are in the battery banner)
-            el.textContent = d.status === 'error' ? t('outage_info.outage_unavailable') : t('outage_info.unscheduled');
+            setTextIfChanged(el, d.status === 'error' ? t('outage_info.outage_unavailable') : t('outage_info.unscheduled'));
         }
     } else {
         // Grid is on — show next outage countdown
@@ -1527,16 +1607,16 @@ function updateOutageInfo() {
             var start = new Date(d.upcoming_windows[0].start);
             var diff = start - now;
             if (diff > 0) {
-                el.innerHTML = t('outage_info.outage_in', { time: outageTimeHtml(diff) });
+                setHtmlIfChanged(el, t('outage_info.outage_in', { time: outageTimeHtml(diff) }));
             } else {
-                el.textContent = '';
+                setTextIfChanged(el, '');
             }
         } else if (d.status === 'clear') {
-            el.textContent = t('outage_info.no_outages_today');
+            setTextIfChanged(el, t('outage_info.no_outages_today'));
         } else if (d.status === 'error') {
-            el.textContent = t('outage_info.unavailable');
+            setTextIfChanged(el, t('outage_info.unavailable'));
         } else {
-            el.textContent = '';
+            setTextIfChanged(el, '');
         }
     }
 }
@@ -1884,19 +1964,24 @@ var SMART_METER_POLL_MS = 5000;
 var smartMeterData = null;
 
 var smartMeterOkAt = 0;
+var smartMeterInFlight = false;   // one request at a time: answers can't arrive out of order
 
 function fetchSmartMeter() {
+    if (smartMeterInFlight) return;
+    smartMeterInFlight = true;
     apiFetch('/api/smart-meter')
         .then(function(r) { return r.json(); })
         .then(function(data) { smartMeterOkAt = Date.now(); smartMeterData = data; renderSmartMeter(); })
         .catch(function() {
             // The request failed (not the meter or its broker): keep the last
             // readings; after a while say the dashboard can't be reached, with
-            // the last values dimmed
-            if (!noDataFor(smartMeterOkAt) || (smartMeterData && smartMeterData.status === 'disabled')) return;
-            smartMeterData = Object.assign({}, smartMeterData || {}, { status: 'unreachable' });
+            // the last values dimmed. Nothing yet: nothing to show (no meter card
+            // for a dashboard without a meter because the first request failed).
+            if (!smartMeterData || smartMeterData.status === 'disabled' || !noDataFor(smartMeterOkAt)) return;
+            smartMeterData = Object.assign({}, smartMeterData, { status: 'unreachable' });
             renderSmartMeter();
-        });
+        })
+        .finally(function() { smartMeterInFlight = false; });
 }
 
 function renderSmartMeter() {
@@ -2133,7 +2218,12 @@ function applyAlertsRegion() {
     });
 }
 
-function loadAlertsMap() {
+// A failed load (e.g. the tablet started before its Wi-Fi) is retried, later
+// each time up to a few minutes apart: a wall screen isn't reloaded by hand
+var ALERTS_MAP_RETRY_MS = [10000, 30000, 60000, 300000];
+
+function loadAlertsMap(attempt) {
+    attempt = attempt || 0;
     apiFetch(window.DASHBOARD_CONFIG.alertsMapUrl)
         .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
         .then(function(map) {
@@ -2141,7 +2231,11 @@ function loadAlertsMap() {
             buildAlertsMaps();
             renderAlerts();
         })
-        .catch(function(e) { console.error('Failed to load alerts map:', e); });
+        .catch(function(e) {
+            console.error('Failed to load alerts map:', e);
+            var wait = ALERTS_MAP_RETRY_MS[Math.min(attempt, ALERTS_MAP_RETRY_MS.length - 1)];
+            setTimeout(function() { loadAlertsMap(attempt + 1); }, wait);
+        });
 }
 
 // Kyiv and Sevastopol are cities: their single "district" is the city itself
@@ -2265,6 +2359,10 @@ function renderAlerts() {
         var id = path.getAttribute('data-district');
         var region = path.getAttribute('data-region');
         var status = alertsDistrictStatus(d, id, region, regionsWithDistrictInfo);
+        // ~280 paths every 30 s: only those whose status (or the language) changed
+        var key = status + '|' + i18nLang;
+        if (path._alertsKey === key) return;
+        path._alertsKey = key;
         path.setAttribute('class', 'alerts-district status-' + status);
         var title = alertsDistrictTitle(id, region);
         if (status !== 'unknown') title += ' — ' + t('alerts.status_' + status);
@@ -2325,7 +2423,7 @@ function fetchGeneratorData() {
             updateGeneratorBanner(data);
             updateGeneratorCard(data);
         })
-        .catch(function() { generatorData = null; });
+        .catch(function() {});   // keep the last data through a failed request
 }
 
 function updateGeneratorBanner(data) {
@@ -2413,31 +2511,53 @@ var onboardingStep = 1;
 var ONBOARDING_STEPS = 5;   // inverter, weather, outages, air raid alerts, optional features
 var onboardingEditMode = false;
 var selectedOutageProvider = 'lvivoblenergo';
+// The saved settings in the wizard: null (first start, nothing to load), 'loading',
+// 'ok' or 'failed'. Saving waits for them: Finish sends every field, so a wizard
+// showing defaults would overwrite the real settings.
+var onboardingLoad = null;
 
 function checkFirstRun() {
     if (!window.DASHBOARD_CONFIG.firstRun) return;
     // A configuration exists but isn't valid: the wizard fixes it, but it's
     // still protected by the settings PIN
     if (window.DASHBOARD_CONFIG.settingsLocked) {
-        showPinPrompt(function() { showOnboarding(false); });
+        showPinPrompt(function() { showOnboarding(false, true); });
     } else {
         showOnboarding(false);
     }
 }
 
-function showOnboarding(editMode) {
+// editMode: Settings -> Edit configuration (Cancel, "Save & restart"). loadValues:
+// fill in the saved settings (edit mode, or a first start over an invalid .env).
+function showOnboarding(editMode, loadValues) {
     onboardingEditMode = editMode;
     onboardingStep = 1;
     var overlay = document.getElementById('onboarding-overlay');
     overlay.classList.remove('hidden');
+    document.getElementById('onb-cancel-btn').hidden = !editMode;
     fillInverterTypeOptions();
     fillAlertsRegionOptions();
     updateOnboardingUI();
+    if (editMode || loadValues) {
+        loadOnboardingValues();
+    } else {
+        setOnboardingLoad(null);
+    }
+}
 
-    if (editMode) {
-        // Load current config values
-        settingsFetch('/api/config')
-            .then(function(r) { return r.json(); })
+function setOnboardingLoad(state) {
+    onboardingLoad = state;
+    document.getElementById('onb-load-error').hidden = state !== 'failed';
+    document.getElementById('onb-next-btn').disabled = state === 'loading' || state === 'failed';
+}
+
+function loadOnboardingValues() {
+    setOnboardingLoad('loading');
+    settingsFetch('/api/config')
+            .then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
             .then(function(cfg) {
                 if (cfg.INVERTER_TYPE) document.getElementById('onb-type').value = cfg.INVERTER_TYPE;
                 if (cfg.INVERTER_IP) document.getElementById('onb-ip').value = cfg.INVERTER_IP;
@@ -2490,9 +2610,9 @@ function showOnboarding(editMode) {
                 document.getElementById('onb-alerts-token').value = cfg.ALERTS_IN_UA_TOKEN || '';
                 updateAlertsProviderFields();
                 document.getElementById('onb-alerts-region').value = cfg.AIR_ALERTS_REGION || '';
+                setOnboardingLoad('ok');
             })
-            .catch(function() {});
-    }
+            .catch(function() { setOnboardingLoad('failed'); });
 }
 
 function hideOnboarding() {
@@ -2541,7 +2661,13 @@ function onboardingGoTo(step) {
     if (step > ONBOARDING_STEPS) step = ONBOARDING_STEPS;
     onboardingStep = step;
     updateOnboardingUI();
-    if (step === 2) useMyLocation();
+}
+
+// Skip: on a first start, skipping the outage schedule means none (not the
+// preselected provider); in the editor it keeps what's saved
+function onboardingSkip() {
+    if (onboardingStep === 3 && onboardingLoad === null) selectOutageProviderByValue('none');
+    onboardingGoTo(onboardingStep + 1);
 }
 
 function onboardingNext() {
@@ -2554,6 +2680,16 @@ function onboardingNext() {
     }
 }
 
+// The server's rule (setup._check_host): an IPv4 address or a host name
+function validInverterHost(value) {
+    var parts = value.split('.');
+    if (parts.every(function(p) { return /^\d+$/.test(p); })) {
+        return parts.length === 4 && parts.every(function(p) { return +p <= 255; });
+    }
+    return value.length <= 253 &&
+        /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/.test(value);
+}
+
 function validateStep1() {
     var ip = document.getElementById('onb-ip').value.trim();
     var serial = document.getElementById('onb-serial').value.trim();
@@ -2562,11 +2698,12 @@ function validateStep1() {
     document.getElementById('onb-ip').classList.remove('error');
     document.getElementById('onb-serial').classList.remove('error');
 
-    if (!ip || !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) {
+    if (!validInverterHost(ip)) {
         document.getElementById('onb-ip').classList.add('error');
         valid = false;
     }
-    if (!serial || !/^\d+$/.test(serial) || serial === '0') {
+    // A Solarman logger serial is an unsigned 32-bit number
+    if (!/^\d{1,10}$/.test(serial) || +serial < 1 || +serial > 4294967295) {
         document.getElementById('onb-serial').classList.add('error');
         valid = false;
     }
@@ -2606,10 +2743,15 @@ function discoverInverters() {
                 modelEl.className = 'device-model';
                 modelEl.textContent = dev.model || t('onboarding.unknown_model');
                 div.append(ipEl, modelEl);
+                div.setAttribute('role', 'button');
+                div.tabIndex = 0;
                 div.onclick = function() {
                     document.querySelectorAll('.discover-device').forEach(function(d) { d.classList.remove('selected'); });
                     div.classList.add('selected');
                     document.getElementById('onb-ip').value = dev.ip;
+                };
+                div.onkeydown = function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); div.onclick(); }
                 };
                 resultsEl.appendChild(div);
             });
@@ -2620,6 +2762,8 @@ function discoverInverters() {
         });
 }
 
+// Only from the "Use my location" button: over HTTP it asks ip-api.com (the
+// browser's IP leaves the network), and it replaces the coordinates in the fields
 function useMyLocation() {
     // Try browser geolocation first (requires HTTPS)
     if (navigator.geolocation && location.protocol === 'https:') {
@@ -2642,28 +2786,42 @@ function useMyLocation() {
 }
 
 function selectOutageProvider(el) {
-    document.querySelectorAll('#onb-outage-radios .onboarding-radio').forEach(function(r) { r.classList.remove('selected'); });
-    el.classList.add('selected');
-    selectedOutageProvider = el.getAttribute('data-value');
-
-    document.getElementById('onb-outage-lviv-fields').classList.toggle('visible', selectedOutageProvider === 'lvivoblenergo');
-    document.getElementById('onb-outage-yasno-fields').classList.toggle('visible', selectedOutageProvider === 'yasno');
-    document.getElementById('onb-outage-dtek-fields').classList.toggle('visible', selectedOutageProvider === 'dtek');
+    selectOutageProviderByValue(el.getAttribute('data-value'));
 }
 
+// The provider choices are a radio group: aria-checked, and the selected one
+// is the group's single Tab stop (arrow keys move, see below)
 function selectOutageProviderByValue(value) {
     var radios = document.querySelectorAll('#onb-outage-radios .onboarding-radio');
     radios.forEach(function(r) {
-        r.classList.remove('selected');
-        if (r.getAttribute('data-value') === value) {
-            r.classList.add('selected');
-        }
+        var selected = r.getAttribute('data-value') === value;
+        r.classList.toggle('selected', selected);
+        r.setAttribute('aria-checked', String(selected));
+        r.tabIndex = selected ? 0 : -1;
     });
     selectedOutageProvider = value;
     document.getElementById('onb-outage-lviv-fields').classList.toggle('visible', value === 'lvivoblenergo');
     document.getElementById('onb-outage-yasno-fields').classList.toggle('visible', value === 'yasno');
     document.getElementById('onb-outage-dtek-fields').classList.toggle('visible', value === 'dtek');
 }
+
+(function() {
+    var group = document.getElementById('onb-outage-radios');
+    if (!group) return;
+    group.addEventListener('keydown', function(e) {
+        var radios = [].slice.call(group.querySelectorAll('.onboarding-radio'));
+        var i = radios.indexOf(e.target);
+        if (i < 0) return;
+        var next = null;
+        if (e.key === ' ' || e.key === 'Enter') next = radios[i];
+        else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = radios[(i + 1) % radios.length];
+        else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = radios[(i + radios.length - 1) % radios.length];
+        if (!next) return;
+        e.preventDefault();
+        selectOutageProvider(next);
+        next.focus();
+    });
+})();
 
 // Inverter driver list (server: one entry per driver; hidden while there is only one)
 function fillInverterTypeOptions() {
@@ -2716,12 +2874,42 @@ function fillAlertsRegionOptions() {
 
 function toggleOnb(el, fieldsId) {
     el.classList.toggle('on');
+    el.setAttribute('aria-checked', String(el.classList.contains('on')));
     if (fieldsId) {
         document.getElementById(fieldsId).classList.toggle('visible', el.classList.contains('on'));
     }
 }
 
+// Setting -> [step, field] in the wizard, for the server's per-field errors
+var ONBOARDING_FIELDS = {
+    INVERTER_IP: [1, 'onb-ip'], LOGGER_SERIAL: [1, 'onb-serial'], INVERTER_PHASES: [1, 'onb-phases'],
+    WEATHER_LATITUDE: [2, 'onb-lat'], WEATHER_LONGITUDE: [2, 'onb-lon'],
+    OUTAGE_REGION_ID: [3, 'onb-yasno-region'], OUTAGE_DSO_ID: [3, 'onb-yasno-dso'], OUTAGE_DTEK_REGION: [3, 'onb-dtek-region'],
+    ALERTS_IN_UA_TOKEN: [4, 'onb-alerts-token'], AIR_ALERTS_REGION: [4, 'onb-alerts-region'],
+    DASHBOARD_TITLE: [5, 'onb-title'], GENERATOR_FUEL_RATE: [5, 'onb-gen-fuel'], GENERATOR_OIL_CHANGE_DATE: [5, 'onb-gen-oil'],
+    TELEGRAM_BOT_TOKEN: [5, 'onb-tg-token'], TELEGRAM_ALLOWED_USERS: [5, 'onb-tg-users']
+};
+
+// Mark the fields the server rejected and go to the first one's step; false
+// when none of them is in the wizard
+function showOnboardingFieldErrors(fields) {
+    var groupInput = { lvivoblenergo: 'onb-outage-group', yasno: 'onb-yasno-group', dtek: 'onb-dtek-group' };
+    var first = null;
+    Object.keys(fields).forEach(function(key) {
+        var spot = key === 'OUTAGE_GROUP' ? [3, groupInput[selectedOutageProvider]] : ONBOARDING_FIELDS[key];
+        var input = spot && document.getElementById(spot[1]);
+        if (!input) return;
+        input.classList.add('error');
+        if (!first || spot[0] < first[0]) first = [spot[0], input];
+    });
+    if (!first) return false;
+    onboardingGoTo(first[0]);
+    first[1].focus();
+    return true;
+}
+
 function saveConfig() {
+    if (onboardingLoad === 'loading' || onboardingLoad === 'failed') return;
     var config = {};
 
     // Step 1 (the type only when there is a choice; otherwise the server's default)
@@ -2797,6 +2985,10 @@ function saveConfig() {
         if (data.status === 'ok') {
             hideOnboarding();
             showRestartOverlay(data.boot);
+        } else if (data.fields && showOnboardingFieldErrors(data.fields)) {
+            nextBtn.disabled = false;
+            setI18nText(nextBtn, 'onboarding.retry');
+            alert(t('common.error', { message: data.error || t('onboarding.unknown_error') }));
         } else if (data.pin_required) {
             // No PIN or a wrong one (e.g. changed meanwhile): ask, then save again
             nextBtn.disabled = false;
@@ -2838,29 +3030,35 @@ function postConfig(config, retried) {
 
 // Wait for the restarted server (a new boot id; the old process answers for
 // up to 2 s after saving), then reload the page
-function showRestartOverlay(oldBoot) {
+// Wait for the restarted server, then reload. needConfigured: false after a
+// factory reset (the new process starts in setup mode).
+function showRestartOverlay(oldBoot, needConfigured) {
     var overlay = document.getElementById('restart-overlay');
     overlay.classList.remove('hidden');
     var textEl = document.getElementById('restart-text');
     var startTime = Date.now();
 
-    var pollInterval = setInterval(function() {
+    // One check at a time (a chained timer, not an interval): a hanging request
+    // doesn't pile up more of them
+    function check() {
         apiFetch('/api/config/status')
             .then(function(r) { return r.json(); })
             .then(function(data) {
-                if (data.configured && !(oldBoot && data.boot === oldBoot)) {
-                    clearInterval(pollInterval);
+                var restarted = !(oldBoot && data.boot === oldBoot);
+                if (restarted && (data.configured || needConfigured === false)) {
                     setI18nText(textEl, 'onboarding.ready');
                     setTimeout(function() { window.location.reload(); }, 500);
+                    return true;
                 }
             })
-            .catch(function() {
-                // Server still restarting
-                if (Date.now() - startTime > 30000) {
-                    setI18nText(textEl, 'onboarding.taking_longer');
-                }
+            .catch(function() {})   // server still restarting
+            .then(function(done) {
+                if (done) return;
+                if (Date.now() - startTime > 30000) setI18nText(textEl, 'onboarding.taking_longer');
+                setTimeout(check, 2000);
             });
-    }, 2000);
+    }
+    setTimeout(check, 2000);
 }
 
 function openConfigEditor() {
@@ -2875,10 +3073,9 @@ function resetConfiguration() {
     settingsFetch('/api/config/reset', { method: 'POST' })
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            if (data.status === 'ok') {
-                document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:var(--text-muted);font-size:1.2rem;">' + t('settings.restarting') + '</div>';
-                setTimeout(function() { location.reload(); }, 4000);
-            }
+            if (data.status !== 'ok') throw new Error(data.error || 'reset failed');
+            closeSettingsPanel();
+            showRestartOverlay(data.boot, false);
         })
         .catch(function() {
             alert(t('settings.reset_failed'));
