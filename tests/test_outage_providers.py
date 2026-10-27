@@ -49,12 +49,14 @@ class TestParseGroupWindows:
 
     def test_group_not_found(self):
         html = "<p>Група 3.2. з 09:00 до 12:00</p>"
-        windows = parse_group_windows(html, "4.1")
-        assert windows == []
+        assert parse_group_windows(html, "4.1") is None
+
+    def test_group_listed_without_outages(self):
+        html = "<p>Група 4.1. Електроенергія є.</p>"
+        assert parse_group_windows(html, "4.1") == []
 
     def test_empty_html(self):
-        windows = parse_group_windows("", "4.1")
-        assert windows == []
+        assert parse_group_windows("", "4.1") is None
 
 
 class TestOutageSchedulePollerStatus:
@@ -528,3 +530,70 @@ class TestPollerDays:
         poller = OutageSchedulePoller(provider=Failing())
         poller._fetch_schedule()
         assert "days" not in poller.get_outage_status()
+
+
+
+class TestProvidersReportErrors:
+    """A failure must never read as "no outages"."""
+
+    def _loe(self, today_html):
+        from unittest.mock import MagicMock
+        resp = MagicMock(ok=True)
+        resp.json.return_value = {"hydra:member": [{"menuItems": [
+            {"name": "Today", "rawHtml": today_html}, {"name": "Tomorrow", "rawHtml": ""}]}]}
+        return resp
+
+    def test_loe_wrong_group_is_an_error(self):
+        from outage_providers import OutageFetchError
+        with patch("outage_providers.lvivoblenergo.requests.get",
+                   return_value=self._loe("<p>Група 1.1. з 09:00 до 12:00</p>")):
+            with pytest.raises(OutageFetchError, match="4.1"):
+                LvivoblenergoProvider(group="4.1").fetch_days()
+
+    def test_loe_without_any_groups_is_no_outages(self):
+        with patch("outage_providers.lvivoblenergo.requests.get",
+                   return_value=self._loe("<p>Відключень не заплановано</p>")):
+            days = LvivoblenergoProvider(group="4.1").fetch_days()
+        assert list(days.values()) == [[]]
+
+    @pytest.mark.parametrize("module, make", [
+        ("lvivoblenergo", lambda: LvivoblenergoProvider(group="4.1")),
+        ("yasno", lambda: __import__("outage_providers.yasno", fromlist=["x"]).YasnoProvider(group="2.1")),
+    ])
+    def test_network_and_json_errors_are_fetch_errors(self, module, make):
+        from unittest.mock import MagicMock
+        from outage_providers import OutageFetchError
+        with patch(f"outage_providers.{module}.requests.get", side_effect=requests.ConnectionError("down")):
+            with pytest.raises(OutageFetchError, match="ConnectionError"):
+                make().fetch_days()
+        bad = MagicMock(ok=True)
+        bad.json.side_effect = ValueError("not json")
+        with patch(f"outage_providers.{module}.requests.get", return_value=bad):
+            with pytest.raises(OutageFetchError, match="JSON"):
+                make().fetch_days()
+
+    def test_yasno_yesterday_as_today_is_not_used(self):
+        from datetime import date, timedelta
+        from unittest.mock import MagicMock
+        from outage_providers import OutageFetchError
+        from outage_providers.yasno import YasnoProvider
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        resp = MagicMock(ok=True)
+        resp.json.return_value = {"2.1": {"today": {"date": yesterday + "T00:00:00+02:00", "slots": []},
+                                          "tomorrow": {}}}
+        with patch("outage_providers.yasno.requests.get", return_value=resp):
+            with pytest.raises(OutageFetchError, match="isn't published yet"):
+                YasnoProvider(group="2.1").fetch_days()
+
+    def test_poller_keeps_the_last_schedule_when_today_is_missing(self):
+        from datetime import date, timedelta
+        from unittest.mock import MagicMock
+        from outage_providers import OutageSchedulePoller
+        provider = MagicMock()
+        today = date.today()
+        provider.fetch_days.return_value = {today: [(9, 0, 12, 0)]}
+        poller = OutageSchedulePoller(provider=provider)
+        poller._fetch_schedule()
+        provider.fetch_days.return_value = {today - timedelta(days=1): []}   # fetched before midnight
+        poller._fetch_schedule()
+        assert poller._days[today] == [(9, 0, 12, 0)]

@@ -147,3 +147,40 @@ class TestGridRelay:
         with patch("telegram_bot.time.time", return_value=1000.0):
             bot.check_inverter()
         assert bot.grid_down_since is None
+
+
+class TestOutageForecast:
+    """/outage before a planned outage: the battery verdict is the dashboard's
+    (outage_readiness), not a guess from a fixed 16 kWh battery."""
+
+    def _upcoming(self, bot):
+        start = datetime.now().replace(second=0, microsecond=0) + timedelta(hours=2)
+        bot.outage_poller = MagicMock()
+        bot.outage_poller.get_outage_status.return_value = {
+            "status": "upcoming", "upcoming_windows": [(start, start + timedelta(hours=3))]}
+        bot.outage_poller.provider = MagicMock(display_name="ДТЕК")
+        bot.allowed_users = {1}
+
+    @pytest.mark.parametrize("verdict, messages", [
+        ("enough", telegram_bot.MESSAGES_UPCOMING_BATTERY_OK),
+        ("tight", telegram_bot.MESSAGES_UPCOMING_BATTERY_TIGHT),
+        ("short", telegram_bot.MESSAGES_UPCOMING_BATTERY_LOW),
+    ])
+    def test_uses_the_dashboards_verdict(self, bot, verdict, messages):
+        self._upcoming(bot)
+        bot.readiness = lambda: {"status": "ok", "verdict": verdict, "soc": 64, "average_load_w": 812}
+        bot._format_poem = lambda: ""
+        bot._handle_outage(1, 1)
+        text = bot.send_message.call_args[0][1]
+        firsts = [m.split("<b>")[0] for m in messages]
+        assert any(text.startswith(f) for f in firsts)
+        assert "64%" in text
+
+    def test_without_a_verdict_only_the_facts(self, bot):
+        self._upcoming(bot)
+        _poller_data(bot, battery_soc=55)
+        bot.readiness = lambda: {"status": "no_data"}
+        bot._format_poem = lambda: ""
+        bot._handle_outage(1, 1)
+        text = bot.send_message.call_args[0][1]
+        assert text.startswith("Увага! Відключення заплановано") and "55%" in text

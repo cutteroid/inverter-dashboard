@@ -4,5 +4,4 @@ from outage_providers.base import (
     OutageFetchError,
     OutageSchedulePoller,
     create_outage_provider,
-    BATTERY_CAPACITY_KWH,
 )

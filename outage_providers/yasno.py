@@ -35,7 +35,10 @@ class YasnoProvider(OutageProvider):
             region_id=self.region_id, dso_id=self.dso_id
         )
         logger.info("YASNO: fetching %s (group=%s)", url, self.group)
-        resp = requests.get(url, timeout=15)
+        try:
+            resp = requests.get(url, timeout=15)
+        except requests.RequestException as e:
+            raise OutageFetchError(f"YASNO request failed: {type(e).__name__}") from e
         if not resp.ok:
             body_snippet = resp.text[:200] if resp.text else "(empty)"
             raise OutageFetchError(
@@ -43,16 +46,25 @@ class YasnoProvider(OutageProvider):
                 f"{self.region_id} / DSO {self.dso_id}: {body_snippet}"
             )
 
-        data = resp.json()
-        group_data = data.get(self.group, {})
-        if not group_data:
+        try:
+            data = resp.json()
+        except ValueError as e:
+            raise OutageFetchError("YASNO: the answer isn't JSON") from e
+        group_data = data.get(self.group) if isinstance(data, dict) else None
+        if not isinstance(group_data, dict) or not group_data:
             raise OutageFetchError(
                 f"YASNO: group '{self.group}' not found in response "
                 f"(available: {', '.join(list(data.keys())[:10])})"
             )
 
         today = date.today()
-        result = {today: self._definite_windows(group_data.get("today", {}))}
+        today_data = group_data.get("today") or {}
+        today_date = str(today_data.get("date", ""))
+        if today_date and not today_date.startswith(today.isoformat()):
+            # Just after midnight YASNO may still send yesterday as "today"; the
+            # poller keeps the last schedule (yesterday's "tomorrow") meanwhile
+            raise OutageFetchError(f"YASNO: today's schedule isn't published yet ({today_date[:10]})")
+        result = {today: self._definite_windows(today_data)}
         # YASNO always returns a "tomorrow" entry, empty until it is scheduled,
         # so only treat it as published when it has outage slots.
         tomorrow_data = group_data.get("tomorrow") or {}
@@ -68,10 +80,13 @@ class YasnoProvider(OutageProvider):
     @staticmethod
     def _definite_windows(day_data):
         windows = []
-        for slot in day_data.get("slots", []):
-            if slot.get("type") != "Definite":
+        for slot in day_data.get("slots") or []:
+            if not isinstance(slot, dict) or slot.get("type") != "Definite":
                 continue
-            sh, sm = divmod(slot["start"], 60)
-            eh, em = divmod(slot["end"], 60)
+            try:
+                sh, sm = divmod(int(slot["start"]), 60)
+                eh, em = divmod(int(slot["end"]), 60)
+            except (KeyError, TypeError, ValueError) as e:
+                raise OutageFetchError("YASNO: unexpected slot in the schedule") from e
             windows.append((sh, sm, eh, em))
         return windows

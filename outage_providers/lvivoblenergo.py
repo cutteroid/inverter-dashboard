@@ -30,10 +30,14 @@ class _TextExtractor(HTMLParser):
             self._current = []
 
 
+_ANY_GROUP = re.compile(r"Група\s+\d+\.\d+\.", re.IGNORECASE)
+
+
 def parse_group_windows(html, group):
     """Parse outage time windows for a specific group from rawHtml.
 
-    Returns list of (start_hour, start_min, end_hour, end_min) tuples.
+    Returns list of (start_hour, start_min, end_hour, end_min) tuples, [] when
+    the group is listed without outages, None when it isn't listed at all.
     """
     parser = _TextExtractor()
     parser.feed(html)
@@ -54,7 +58,14 @@ def parse_group_windows(html, group):
                     int(m.group(3)), int(m.group(4)),
                 ))
             return windows
-    return []
+    return None
+
+
+def lists_groups(html):
+    """Does the schedule text list any groups (so a missing one is a wrong group)?"""
+    parser = _TextExtractor()
+    parser.feed(html)
+    return any(_ANY_GROUP.match(line) for line in parser.lines)
 
 
 class LvivoblenergoProvider(OutageProvider):
@@ -73,14 +84,22 @@ class LvivoblenergoProvider(OutageProvider):
     def fetch_days(self):
         """Fetch outage windows for today and, when published, tomorrow."""
         logger.info("Lvivoblenergo: fetching %s (group=%s)", self.api_url, self.group)
-        resp = requests.get(self.api_url, timeout=15)
+        try:
+            resp = requests.get(self.api_url, timeout=15)
+        except requests.RequestException as e:
+            raise OutageFetchError(f"Lvivoblenergo request failed: {type(e).__name__}") from e
         if not resp.ok:
             body_snippet = resp.text[:200] if resp.text else "(empty)"
             raise OutageFetchError(
                 f"Lvivoblenergo API returned HTTP {resp.status_code}: {body_snippet}"
             )
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError as e:
+            raise OutageFetchError("Lvivoblenergo: the answer isn't JSON") from e
+        if not isinstance(data, dict):
+            raise OutageFetchError("Lvivoblenergo: unexpected answer")
         members = data.get("hydra:member", [])
         if not members:
             raise OutageFetchError("Lvivoblenergo: no hydra:member entries in response")
@@ -91,9 +110,15 @@ class LvivoblenergoProvider(OutageProvider):
             raise OutageFetchError("Lvivoblenergo: no 'Today' menu item found in response")
 
         today = date.today()
-        result = {today: parse_group_windows(items["Today"], self.group)}
-        # "Tomorrow" is empty until LOE publishes it; parse_group_windows can't
-        # tell "not published" from "no outages", so only keep it when non-empty.
+        today_windows = parse_group_windows(items["Today"], self.group)
+        if today_windows is None:
+            if lists_groups(items["Today"]):
+                # Other groups are listed, ours isn't: a wrong group, not a clear day
+                raise OutageFetchError(f"Lvivoblenergo: group {self.group} isn't in today's schedule")
+            today_windows = []   # no groups listed: no outages announced
+        result = {today: today_windows}
+        # "Tomorrow" is empty until LOE publishes it; it can't be told from "no
+        # outages", so only keep it when it has windows.
         tomorrow_windows = parse_group_windows(items.get("Tomorrow", ""), self.group)
         if tomorrow_windows:
             result[today + timedelta(days=1)] = tomorrow_windows

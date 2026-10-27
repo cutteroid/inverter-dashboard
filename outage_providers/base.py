@@ -6,8 +6,6 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-BATTERY_CAPACITY_KWH = 16.0
-
 # A schedule older than this (because fetches keep failing) is no longer shown.
 SCHEDULE_MAX_AGE = timedelta(minutes=30)
 
@@ -123,7 +121,13 @@ class OutageSchedulePoller:
                 self._last_error = f"{type(e).__name__}: {e}"
             return
         now = datetime.now()
-        windows = days.get(now.date(), [])
+        if now.date() not in days:
+            # Fetched just before midnight: no schedule for the new day in it, and
+            # that isn't "no outages". Keep the last one (it may have this day as
+            # its "tomorrow") until the next fetch.
+            logger.info("Outage schedule from %s has no entry for %s yet", provider_name, now.date())
+            return
+        windows = days[now.date()]
         with self._lock:
             self._windows = windows
             self._days = days

@@ -1021,19 +1021,24 @@ def get_outage_schedule():
     return jsonify(result)
 
 
-@app.route("/api/outage-readiness")
-def get_outage_readiness():
-    """Will the battery last through the next planned outage? (see outage_readiness.py)"""
+def current_outage_readiness():
+    """Will the battery last through the next planned outage? (see outage_readiness.py)
+    For the card and the Telegram bot's outage message alike."""
     if outage_poller is None or inverter_config is None or not inverter_config.has_battery:
-        return jsonify({"status": "disabled"})
+        return {"status": "disabled"}
     status = outage_poller.get_outage_status()
     if status["status"] in ("unknown", "error"):
-        return jsonify({"status": "no_schedule"})
+        return {"status": "no_schedule"}
     data = inverter_poller.data if inverter_poller else None
     if not data or data.get("error"):
-        return jsonify({"status": "no_data"})
-    return jsonify(outage_readiness(data, status.get("days", []), datetime.now(),
-                                    data.get("load_average_w"), battery_capacity_wh(data)))
+        return {"status": "no_data"}
+    return outage_readiness(data, status.get("days", []), datetime.now(),
+                            data.get("load_average_w"), battery_capacity_wh(data))
+
+
+@app.route("/api/outage-readiness")
+def get_outage_readiness():
+    return jsonify(current_outage_readiness())
 
 
 @app.route("/api/smart-meter")
@@ -1328,6 +1333,7 @@ def start_telegram_bot():
         weather_poller=weather_poller,
         is_public=is_public,
         inverter_poller=inverter_poller,
+        readiness=current_outage_readiness,
     )
     bot.start(inverter_interval=120)
     logging.info("Telegram bot started with %d allowed users (public=%s)", len(user_ids), is_public)

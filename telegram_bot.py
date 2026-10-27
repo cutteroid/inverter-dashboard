@@ -8,7 +8,6 @@ from datetime import datetime, date
 from calendar import monthrange
 import requests
 
-from outage_providers import BATTERY_CAPACITY_KWH
 from storage import atomic_write_json, load_json
 try:
     from poems import get_poem
@@ -160,12 +159,15 @@ INVERTER_DATA_MAX_AGE = 180  # seconds
 class TelegramBot:
     def __init__(self, token, allowed_users, inverter,
                  outage_poller=None, state_file=None, grid_daily_log_file=None,
-                 weather_poller=None, is_public=False, inverter_poller=None):
+                 weather_poller=None, is_public=False, inverter_poller=None, readiness=None):
         self.token = token
         self.allowed_users = set(allowed_users)
         self.is_public = is_public
         self.inverter = inverter
         self.inverter_poller = inverter_poller
+        # () -> the dashboard's outage readiness (app.current_outage_readiness):
+        # the outage message's verdict, so it matches the dashboard's card
+        self.readiness = readiness
         self.outage_poller = outage_poller
         self.grid_daily_log_file = grid_daily_log_file
         self.weather_poller = weather_poller
@@ -510,48 +512,39 @@ class TelegramBot:
             start_dt, end_dt = windows[0]
             start_time = start_dt.strftime("%H:%M")
             end_time = end_dt.strftime("%H:%M")
-            outage_hours = (end_dt - start_dt).total_seconds() / 3600
 
-            # Get battery and load data for survival estimate
-            soc = 0
-            load = 0
-            if self.inverter.config.has_battery:
+            # The battery verdict is the dashboard's own (outage_readiness.py: the
+            # real capacity, the shutdown SOC, the recent average load)
+            readiness = {}
+            if self.inverter.config.has_battery and self.readiness:
                 try:
-                    data = self._get_inverter_data()
-                    if not data.get("error"):
-                        soc = data.get("battery_soc", 0)
-                        load = data.get("load_power", 0)
+                    readiness = self.readiness() or {}
                 except Exception:
-                    logger.warning("Failed to read inverter data for outage battery estimate")
+                    logger.warning("Outage readiness unavailable for the outage message")
+            verdict_messages = {"enough": MESSAGES_UPCOMING_BATTERY_OK,
+                                "tight": MESSAGES_UPCOMING_BATTERY_TIGHT,
+                                "short": MESSAGES_UPCOMING_BATTERY_LOW}
 
             if not self.inverter.config.has_battery:
                 msg = (
                     f"Увага! Відключення заплановано з <b>{start_time}</b> "
                     f"до <b>{end_time}</b>. Сховища немає — чекаємо на мережу."
                 )
+            elif readiness.get("status") == "ok" and readiness.get("verdict") in verdict_messages:
+                msg = self._pick_message(
+                    verdict_messages[readiness["verdict"]],
+                    start_time=start_time, end_time=end_time,
+                    soc=readiness.get("soc", 0), load=readiness.get("average_load_w", 0),
+                    provider_name=self._get_provider_name(),
+                )
             else:
-                available_kwh = BATTERY_CAPACITY_KWH * (soc / 100)
-                needed_kwh = (load / 1000) * outage_hours
-
-                pname = self._get_provider_name()
-                if needed_kwh <= 0 or available_kwh >= needed_kwh * 1.1:
-                    msg = self._pick_message(
-                        MESSAGES_UPCOMING_BATTERY_OK,
-                        start_time=start_time, end_time=end_time, soc=soc,
-                        provider_name=pname,
-                    )
-                elif available_kwh >= needed_kwh * 0.7:
-                    msg = self._pick_message(
-                        MESSAGES_UPCOMING_BATTERY_TIGHT,
-                        start_time=start_time, end_time=end_time,
-                        soc=soc, load=load, provider_name=pname,
-                    )
-                else:
-                    msg = self._pick_message(
-                        MESSAGES_UPCOMING_BATTERY_LOW,
-                        start_time=start_time, end_time=end_time,
-                        soc=soc, load=load, provider_name=pname,
-                    )
+                # No verdict (no recent load average or battery data yet): just the facts
+                data = self._get_inverter_data() or {}
+                soc = data.get("battery_soc") if not data.get("error") else None
+                msg = (
+                    f"Увага! Відключення заплановано з <b>{start_time}</b> до <b>{end_time}</b>."
+                    + (f" Сховище на <b>{soc}%</b>." if soc is not None else "")
+                )
 
             # If there are more windows today, append them
             if len(windows) > 1:
@@ -727,7 +720,10 @@ class TelegramBot:
         if not data:
             return {"error": "no inverter data yet"}
         try:
-            age = (datetime.now() - datetime.fromisoformat(data["last_updated"])).total_seconds()
+            if isinstance(data.get("timestamp"), (int, float)):
+                age = time.time() - data["timestamp"]   # epoch: unaffected by DST changes
+            else:
+                age = (datetime.now() - datetime.fromisoformat(data["last_updated"])).total_seconds()
         except (KeyError, TypeError, ValueError):
             age = None
         if age is None or age > INVERTER_DATA_MAX_AGE:

@@ -60,7 +60,7 @@ python scan_phases.py       # phase registers
   - `__init__.py` — `DRIVERS` registry, `driver_class()`, `create_inverter(settings)`. **New driver:** subclass `InverterDriver`, return the documented fields, register it in `DRIVERS`, add its name to `setup.INVERTER_TYPES` (stdlib-only script; a test keeps the lists in sync) and its settings to the wizard (step 1). The wizard's "Inverter type" list appears by itself once `DRIVERS` has more than one entry.
   - UI text never names a brand (tests check page and locales); brand-specific wording belongs to the driver (`display_name`).
 
-- **`telegram_bot.py`** — Telegram bot with commands (`/battery`, `/outage`, `/grid`, `/test`). Sends notifications for low battery and grid restore events. Messages are written in 1800s literary Ukrainian style. Uses `poems.py` for weather-themed poetry excerpts.
+- **`telegram_bot.py`** — Telegram bot with commands (`/battery`, `/outage`, `/grid`, `/test`). Its upcoming-outage battery verdict comes from the dashboard's `current_outage_readiness()` (`readiness=`), not its own estimate. Sends notifications for low battery and grid restore events. Messages are written in 1800s literary Ukrainian style. Uses `poems.py` for weather-themed poetry excerpts.
 
 - **`templates/index.html`** — Single-page dashboard markup (cards, banners, settings panel, onboarding wizard). Passes server values to the JS via a small inline `window.DASHBOARD_CONFIG` (locales, default language, first-run flag).
 
@@ -76,7 +76,7 @@ python scan_phases.py       # phase registers
 - `yasno.py` — Yasno (DTEK) schedule provider
 - `dtek.py` — DTEK regions (Kyiv oblast, Kyiv, Dnipro, Odesa) via the outage-data-ua community feed
 
-Providers implement `fetch_days()` (today, plus tomorrow once published) and raise `OutageFetchError` on failure — an empty window list means "no outages", so never return `[]` for an error.
+Providers implement `fetch_days()` (today, plus tomorrow once published) and raise `OutageFetchError` on failure — an empty window list means "no outages", so never return `[]` for an error. That includes network/JSON errors, a Lvivoblenergo schedule that lists other groups but not ours (a wrong group), and YASNO still sending yesterday as "today" just after midnight. The poller ignores a result without an entry for today (fetched just before midnight) and keeps the last schedule.
 
 ### Air Raid Alerts
 

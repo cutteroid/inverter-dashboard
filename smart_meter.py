@@ -59,6 +59,14 @@ def _number(value):
     return f if f == f else None  # NaN -> None
 
 
+def _complete_sum(values):
+    """Sum of per-phase values, or None until every phase has one: a three-phase
+    meter's data/posWh1..3 arrive one by one, and L1 alone isn't the total."""
+    if not values or any(v is None for v in values):
+        return None
+    return sum(values)
+
+
 def _as_list(value):
     """Scalar (single-phase) or [L1, L2, L3] (three-phase) -> list of numbers."""
     if isinstance(value, list):
@@ -278,9 +286,9 @@ class SmartMeter:
         """
         totals = {}
         for key in self.ENERGY_KEYS:
-            vals = [v for v in (self._values.get(key) or []) if v is not None]
-            if vals:
-                totals[key] = sum(vals)
+            total = _complete_sum(self._values.get(key))
+            if total is not None:
+                totals[key] = total
         if not totals:
             return
         today = self.clock().strftime("%Y-%m-%d")
@@ -348,8 +356,8 @@ class SmartMeter:
         else:
             status = "ok"
 
-        consumed = total("posWh")
-        generated = total("negWh")
+        consumed = _complete_sum(values.get("posWh"))
+        generated = _complete_sum(values.get("negWh"))
         result = {
             "status": status,
             "serial": serial,

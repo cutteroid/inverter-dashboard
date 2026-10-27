@@ -292,3 +292,27 @@ def test_demo_meter(setting, phases):
 def test_real_meter_not_flagged_demo(meter):
     meter.handle_message("buckler/1/dataJson", json.dumps(SINGLE_PHASE_JSON))
     assert "demo" not in meter.get_status()
+
+
+def test_energy_total_waits_for_every_phase(tmp_path):
+    """data/posWh1..3 arrive one by one: L1 alone must not become the day's
+    baseline (after a mid-day restart it replaced the saved one, and "today"
+    then counted L2 and L3's lifetime energy)."""
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
+    daily = tmp_path / "daily.json"
+    daily.write_text(json.dumps({"date": today, "posWh": 5_999_000.0}))
+    m = SmartMeter(daily_file=str(daily))
+    for i, v in enumerate((1e6, 2e6, 3e6), start=1):
+        m.handle_message(f"buckler/M1/data/V{i}", "230")
+        m.handle_message(f"buckler/M1/data/posWh{i}", str(v))
+    status = m.get_status()
+    assert json.loads(daily.read_text())["posWh"] == 5_999_000.0
+    assert status["today_consumed_kwh"] == pytest.approx(1.0)
+    assert status["energy_consumed_kwh"] == pytest.approx(6000.0)
+
+
+def test_energy_total_is_none_while_a_phase_is_missing(tmp_path):
+    m = SmartMeter(daily_file=str(tmp_path / "daily.json"))
+    m.handle_message("buckler/M1/data/posWh1", "1000")
+    assert m.get_status()["energy_consumed_kwh"] is None
