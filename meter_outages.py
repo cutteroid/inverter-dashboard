@@ -46,12 +46,30 @@ def _iso(dt):
     return dt.isoformat(timespec="seconds")
 
 
+def local_now():
+    """Now in local time with its UTC offset: durations stay right when the
+    clocks go back (a naive 03:30 happens twice that night)."""
+    return datetime.now().astimezone()
+
+
+def _as_clock(dt, aware):
+    """dt as the clock keeps time: with an offset (naive = local time) or naive."""
+    if aware and dt.tzinfo is None:
+        return dt.astimezone()
+    if not aware and dt.tzinfo is not None:
+        return dt.astimezone().replace(tzinfo=None)
+    return dt
+
+
 class OutageLog:
-    def __init__(self, path=None, clock=datetime.now, switch_on_delay=DEFAULT_SWITCH_ON_DELAY):
+    def __init__(self, path=None, clock=local_now, switch_on_delay=DEFAULT_SWITCH_ON_DELAY):
         self.path = path   # None: in memory only (demo meter)
         self.clock = clock
         self.restore_seconds = switch_on_delay + RESTORE_MARGIN_SECONDS
         self._lock = threading.Lock()
+        # Held from taking the snapshot to writing it: two threads saving at once
+        # (the meter's messages, the offline check) write in order, the latest last
+        self._save_lock = threading.Lock()
         self._events = []  # closed outages, oldest first: {type, start, end, phases, cut}
         self._open = None  # the outage going on now, same keys without "end"
         self._load()
@@ -109,7 +127,7 @@ class OutageLog:
             if current:
                 events.append(dict(current, end=None))
         return sorted(({k: v for k, v in e.items() if k != "restore"} for e in events),
-                      key=lambda e: e["start"], reverse=True)
+                      key=lambda e: datetime.fromisoformat(e["start"]), reverse=True)
 
     def _restoring_after(self, outage, until):
         """Is this the meter's wait after the last (total) outage, as of until?
@@ -134,18 +152,22 @@ class OutageLog:
 
     def _prune(self):
         """Drop outages that ended before yesterday (caller holds the lock)."""
-        since = _iso(datetime.combine(self.clock().date() - timedelta(days=1), datetime.min.time()))
-        self._events = [e for e in self._events if e["end"] >= since]
+        now = self.clock()
+        since = _as_clock(datetime.combine(now.date() - timedelta(days=1), datetime.min.time()),
+                          now.tzinfo is not None)
+        self._events = [e for e in self._events if datetime.fromisoformat(e["end"]) >= since]
 
     def _save(self):
         if not self.path:
             return
-        with self._lock:
-            data = {"events": list(self._events), "open": self._open}
-        try:
-            atomic_write_json(self.path, data)
-        except OSError:
-            logger.exception("Could not save the meter outage log")
+        with self._save_lock:
+            with self._lock:
+                data = {"events": [dict(e) for e in self._events],
+                        "open": dict(self._open) if self._open else None}
+            try:
+                atomic_write_json(self.path, data)
+            except OSError:
+                logger.exception("Could not save the meter outage log")
 
     def _load(self):
         if not self.path:
@@ -164,9 +186,19 @@ class OutageLog:
             except (KeyError, TypeError, ValueError):
                 return False
 
-        self._events = sorted((e for e in data.get("events") or [] if isinstance(e, dict) and valid(e, True)),
-                              key=lambda e: e["start"])
+        # Entries saved before times had an offset (or by a clock of the other
+        # kind) are read as local time
+        aware = self.clock().tzinfo is not None
+
+        def as_clock(e):
+            for key in ("start", "end"):
+                if e.get(key):
+                    e[key] = _iso(_as_clock(datetime.fromisoformat(e[key]), aware))
+            return e
+
+        self._events = sorted((as_clock(e) for e in data.get("events") or [] if isinstance(e, dict) and valid(e, True)),
+                              key=lambda e: datetime.fromisoformat(e["start"]))
         open_ = data.get("open")
-        self._open = open_ if isinstance(open_, dict) and valid(open_, False) else None
+        self._open = as_clock(open_) if isinstance(open_, dict) and valid(open_, False) else None
         with self._lock:
             self._prune()

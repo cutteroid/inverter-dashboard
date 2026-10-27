@@ -1,6 +1,7 @@
 """Tests for data recording functions in app.py."""
 import json
 import os
+import time
 import pytest
 from unittest.mock import patch
 from datetime import datetime, timedelta
@@ -151,7 +152,7 @@ class TestRecordPhaseSample:
             # First sample: sets last_sample_time
             app.record_phase_sample(1000, 2000, 3000)
             # Simulate 60 seconds elapsed
-            app.last_sample_time = datetime.now() - timedelta(seconds=60)
+            app.last_sample_time = time.monotonic() - 60
             # Second sample
             app.record_phase_sample(1000, 2000, 3000)
         with open(stats_file) as f:
@@ -168,7 +169,7 @@ class TestRecordPhaseSample:
             import app
             app.record_phase_sample(1000, 2000, 3000)
             # Simulate 10 minutes elapsed (> 5 min threshold)
-            app.last_sample_time = datetime.now() - timedelta(minutes=10)
+            app.last_sample_time = time.monotonic() - 600
             app.record_phase_sample(1000, 2000, 3000)
         with open(stats_file) as f:
             stats = json.load(f)
@@ -182,7 +183,7 @@ class TestRecordPhaseSample:
         with patch("app.PHASE_STATS_FILE", stats_file):
             import app
             app.record_phase_sample(100, 200, 300)
-            app.last_sample_time = datetime.now() - timedelta(seconds=30)
+            app.last_sample_time = time.monotonic() - 30
             app.record_phase_sample(500, 600, 700)
         with open(stats_file) as f:
             stats = json.load(f)

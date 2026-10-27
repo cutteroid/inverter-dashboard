@@ -18,6 +18,8 @@ def _isolated_data_files(tmp_path, monkeypatch):
                  "GRID_DAILY_LOG_FILE", "GENERATOR_LOG_FILE", "INVERTER_CONFIG_FILE"):
         monkeypatch.setattr(app, name, str(tmp_path / os.path.basename(getattr(app, name))))
     monkeypatch.setattr(telegram_bot, "BATTERY_REPORT_DIR", str(tmp_path / "battery_reports"))
+    # In-memory tracking state starts fresh for each test
+    monkeypatch.setattr(app, "_grid_counter", {"last": None, "day": None})
 
 
 def page_config(html):

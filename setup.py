@@ -48,9 +48,14 @@ _HOSTNAME_RE = re.compile(
     r"^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$")
 
 
+def _digits(v):
+    """Only 0-9: str.isdigit() also accepts e.g. "²", which int() rejects."""
+    return v.isascii() and v.isdigit()
+
+
 def _check_host(v):
     parts = v.split(".")
-    if all(p.isdigit() for p in parts):
+    if all(_digits(p) for p in parts):
         if len(parts) != 4 or any(int(p) > 255 for p in parts):
             return "must be a valid IPv4 address"
         return None
@@ -59,7 +64,7 @@ def _check_host(v):
 
 def _check_int_range(lo, hi):
     def check(v):
-        if not v.isdigit() or not lo <= int(v) <= hi:
+        if not _digits(v) or not lo <= int(v) <= hi:
             return f"must be a whole number from {lo} to {hi}"
         return None
     return check
@@ -416,8 +421,9 @@ def write_env(values, extra_lines, path=".env"):
     lines.append("")
 
     lines.append("# Weather (coordinates for Open-Meteo API)")
-    lines.append(f"WEATHER_LATITUDE={values.get('WEATHER_LATITUDE', '50.4501')}")
-    lines.append(f"WEATHER_LONGITUDE={values.get('WEATHER_LONGITUDE', '30.5234')}")
+    # "or": an empty value (allowed, the field is optional) means the default too
+    lines.append(f"WEATHER_LATITUDE={values.get('WEATHER_LATITUDE') or '50.4501'}")
+    lines.append(f"WEATHER_LONGITUDE={values.get('WEATHER_LONGITUDE') or '30.5234'}")
     lines.append("")
 
     lines.append("# Outage Schedule Provider")
@@ -459,10 +465,10 @@ def write_env(values, extra_lines, path=".env"):
     lines.append("# Telegram Bot")
     telegram_enabled = values.get("TELEGRAM_ENABLED", "false")
     lines.append(f"TELEGRAM_ENABLED={telegram_enabled}")
-    if telegram_enabled.lower() in ("true", "1", "yes"):
-        lines.append(f"TELEGRAM_BOT_TOKEN={values.get('TELEGRAM_BOT_TOKEN', '')}")
-        lines.append(f"TELEGRAM_ALLOWED_USERS={values.get('TELEGRAM_ALLOWED_USERS', '')}")
-        lines.append(f"TELEGRAM_PUBLIC={values.get('TELEGRAM_PUBLIC', 'false')}")
+    # Kept while the bot is switched off, so switching it back on doesn't need them again
+    for key, default in (("TELEGRAM_BOT_TOKEN", ""), ("TELEGRAM_ALLOWED_USERS", ""), ("TELEGRAM_PUBLIC", "false")):
+        if telegram_enabled.lower() in ("true", "1", "yes") or values.get(key):
+            lines.append(f"{key}={values.get(key) or default}")
 
     # Air raid alerts (only what was set, so defaults stay defaults)
     alerts_lines = [f"{key}={values[key]}"
@@ -480,9 +486,30 @@ def write_env(values, extra_lines, path=".env"):
         lines.extend(extra_lines)
 
     lines.append("")  # trailing newline
+    _write_private_atomically(path, "\n".join(lines))
 
-    with open(path, "w") as f:
-        f.write("\n".join(lines))
+
+def _write_private_atomically(path, text):
+    """Replace path with text: a temp file next to the real file (in Docker .env
+    is a link into data/), forced to disk, then renamed over it, so a power cut
+    leaves the old or the new file, never an empty one. Readable by its owner
+    only: it holds the bot and alerts tokens and the settings PIN."""
+    real = os.path.realpath(path)
+    tmp = f"{real}.{os.getpid()}.tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o600)   # O_CREAT's mode only applies to a new file
+        os.replace(tmp, real)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def main():

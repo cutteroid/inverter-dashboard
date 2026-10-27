@@ -206,16 +206,17 @@ class TestDetectConfigEdgeCases:
         config = inverter.detect_config()
         assert config.has_battery is True
 
-    def test_stage1_read_failure_defaults_to_single_phase(self, inverter):
-        """If L2/L3 reads fail, phases should default to 1."""
+    def test_stage1_read_failure_keeps_the_current_config(self, inverter):
+        """L2/L3 reads all failing is a busy logger, not a single-phase inverter:
+        detection gives up (the caller keeps the config it has)."""
         def failing_read(addr):
             if addr in (645, 646):
                 raise Exception("connection timeout")
             return {183: 5200, 187: 300}.get(addr, 0)
 
         inverter.read_register = failing_read
-        config = inverter.detect_config()
-        assert config.phases == 1
+        with pytest.raises(RuntimeError, match="phase detection"):
+            inverter.detect_config()
 
     def test_stage2_read_failure_defaults_to_battery_and_pv2(self, inverter):
         """If battery/PV2 reads fail, should default to has_battery=True, pv_strings=2."""
@@ -230,16 +231,16 @@ class TestDetectConfigEdgeCases:
         assert config.has_battery is True  # default
         assert config.pv_strings == 2      # default
 
-    def test_all_reads_fail_returns_safe_defaults(self, inverter):
-        """If everything fails, should return safe defaults."""
+    def test_all_reads_fail_gives_up(self, inverter):
+        """If everything fails there's nothing to detect from: no config at all
+        (the caller keeps the one it has)."""
         def always_fail(addr):
             raise Exception("connection timeout")
 
         inverter.read_register = always_fail
-        config = inverter.detect_config()
-        assert config.phases == 1          # no L2/L3 detected
-        assert config.has_battery is True  # default
-        assert config.pv_strings == 2     # default
+        with pytest.raises(RuntimeError):
+            inverter.detect_config()
+        assert inverter.inverter is None   # disconnected all the same
 
     def test_intermittent_3phase_detection(self, inverter):
         """If only one out of three samples detects 3-phase, it still counts."""
@@ -322,17 +323,31 @@ class TestDetectConfigGenerator:
         assert config.phases == 1
         assert config.has_generator is False
 
-    def test_generator_register_read_failure_defaults_false(self, inverter):
-        """If generator register read fails → has_generator=False."""
+    def test_generator_register_read_failure_gives_up(self, inverter):
+        """Generator reads all failing: no answer isn't "no generator", so no
+        config (a generator found before stays found)."""
         def failing_gen_read(addr):
             if addr in (667, 166):
                 raise Exception("connection timeout")
             return {645: 2300, 646: 2300, 587: 5200, 673: 300}.get(addr, 0)
 
         inverter.read_register = failing_gen_read
+        with pytest.raises(RuntimeError, match="generator"):
+            inverter.detect_config()
+
+    def test_one_answered_generator_sample_is_enough(self, inverter):
+        calls = []
+
+        def flaky_gen_read(addr):
+            if addr == 667:
+                calls.append(addr)
+                if len(calls) < 3:
+                    raise Exception("connection timeout")
+            return {645: 2300, 646: 2300, 587: 5200, 673: 300}.get(addr, 0)
+
+        inverter.read_register = flaky_gen_read
         config = inverter.detect_config()
-        assert config.phases == 3
-        assert config.has_generator is False
+        assert config.phases == 3 and config.has_generator is False
 
 
 def test_detect_config_disconnects_afterwards(inverter):
@@ -379,3 +394,12 @@ class TestDeviceType:
         inverter.read_register = MagicMock(side_effect=reg)
         config = inverter.detect_config()
         assert config.family == "unknown" and config.device_type is None and config.phases == 3
+
+
+def test_disconnect_failure_still_forgets_the_connection(inverter):
+    """A client whose disconnect() raises must not be reused by the next read."""
+    client = inverter.inverter
+    client.disconnect.side_effect = OSError("broken pipe")
+    inverter.disconnect()
+    assert inverter.inverter is None
+    client.disconnect.assert_called_once()

@@ -2415,7 +2415,12 @@ var onboardingEditMode = false;
 var selectedOutageProvider = 'lvivoblenergo';
 
 function checkFirstRun() {
-    if (window.DASHBOARD_CONFIG.firstRun) {
+    if (!window.DASHBOARD_CONFIG.firstRun) return;
+    // A configuration exists but isn't valid: the wizard fixes it, but it's
+    // still protected by the settings PIN
+    if (window.DASHBOARD_CONFIG.settingsLocked) {
+        showPinPrompt(function() { showOnboarding(false); });
+    } else {
         showOnboarding(false);
     }
 }
@@ -2792,6 +2797,11 @@ function saveConfig() {
         if (data.status === 'ok') {
             hideOnboarding();
             showRestartOverlay(data.boot);
+        } else if (data.pin_required) {
+            // No PIN or a wrong one (e.g. changed meanwhile): ask, then save again
+            nextBtn.disabled = false;
+            setI18nText(nextBtn, 'onboarding.retry');
+            showPinPrompt(saveConfig);
         } else {
             nextBtn.disabled = false;
             setI18nText(nextBtn, 'onboarding.retry');

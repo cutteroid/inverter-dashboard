@@ -33,7 +33,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-from meter_outages import DEFAULT_SWITCH_ON_DELAY, PARTIAL, TOTAL, OutageLog
+from meter_outages import DEFAULT_SWITCH_ON_DELAY, PARTIAL, TOTAL, OutageLog, local_now
 from storage import atomic_write_json, data_path, load_json
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ class SmartMeter:
 
     ENERGY_KEYS = ("posWh", "negWh")
 
-    def __init__(self, serial_filter=None, daily_file="smart_meter_daily.json", clock=datetime.now, demo=False,
+    def __init__(self, serial_filter=None, daily_file="smart_meter_daily.json", clock=local_now, demo=False,
                  outages_file=None, switch_on_delay=DEFAULT_SWITCH_ON_DELAY):
         self.serial_filter = serial_filter or None
         self.daily_file = daily_file  # None: keep today's baseline in memory only

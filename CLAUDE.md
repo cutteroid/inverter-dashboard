@@ -101,15 +101,15 @@ The app runs several daemon threads:
 - `AlertsPoller` — fetches air raid alerts every 30s
 - paho-mqtt network loop (`SmartMeterClient`, when the smart meter is enabled) — handles meter messages as they arrive
 
-Transient failures never replace good data: `InverterPoller` keeps the last good readings through a failed poll (until they're older than `INVERTER_CACHE_MAX_AGE`, 5 min; `/api/data` reports `data_age_seconds`), and the frontend keeps every card's last data through failed requests, reporting a problem only after `STALE_ERROR_MS` (60 s) without an answer (`noDataFor()`). Error texts must name the real cause: a failed request from the browser is "Connection failed" / "No connection", never e.g. "MQTT broker unavailable".
+Transient failures never replace good data: `InverterPoller` keeps the last good readings through a failed poll (until they're older than `INVERTER_CACHE_MAX_AGE`, 5 min; ages come from the readings' epoch `timestamp`, not local time, which repeats an hour in October; `/api/data` reports `data_age_seconds`), and the frontend keeps every card's last data through failed requests, reporting a problem only after `STALE_ERROR_MS` (60 s) without an answer (`noDataFor()`). Error texts must name the real cause: a failed request from the browser is "Connection failed" / "No connection", never e.g. "MQTT broker unavailable".
 
 All pollers use thread locks for safe cache access. The inverter connection (the driver's `lock`) is shared between `InverterPoller` and auto-detect (one logger connection per poll: its few TCP slots are the scarce resource). The Telegram bot reads `InverterPoller.data` (no direct inverter reads).
 
-Data files (stats, logs, caches, bot state) default to `storage.data_path(name)` = `data/<name>` when `data/` exists (the Docker volume, so they survive deploys), else next to the app; tests redirect them all to a temp folder (autouse fixture in `tests/conftest.py`). They go through `storage.py`: `atomic_write_json()` (temp file + fsync + rename, safe across power cuts) and `load_json()` (missing/corrupt file → default; corrupt files are moved to `*.corrupt`). Read-modify-write updates in `app.py` hold `_data_lock`.
+Data files (stats, logs, caches, bot state) default to `storage.data_path(name)` = `data/<name>` when `data/` exists (the Docker volume, so they survive deploys), else next to the app; tests redirect them all to a temp folder (autouse fixture in `tests/conftest.py`). They go through `storage.py`: `atomic_write_json()` (temp file per process/thread + fsync + rename, safe across power cuts and concurrent saves) and `load_json()` (missing/corrupt file → default; corrupt files are moved to `*.corrupt`). Read-modify-write updates in `app.py` hold `_data_lock`.
 
 The container starts as root only for `docker-entrypoint.sh`: it chowns to uid 1000 whatever in `data/` that user can't write (never `data/mosquitto/`), then runs the app as uid 1000 via `setpriv`. Keep the app itself non-root.
 
-Config saved from the UI is validated by `setup.validate_config()` (types, ranges, no line breaks, no unknown keys) before `.env` is written.
+Config saved from the UI is validated by `setup.validate_config()` (types, ranges, no line breaks, no unknown keys) before `.env` is written — atomically and owner-only (0600; in Docker `.env` is a link into `data/`, the real file is replaced). Intervals and ages use `time.monotonic()` / epoch time, never naive local time (DST): phase stats, inverter data age, the bot loop; the meter and its outage log keep times with their UTC offset (`meter_outages.local_now`). The grid daily import log follows the inverter's own counter reset near midnight (`GRID_DAY_DRIFT`), and an open generator session stores `last_seen`, so app downtime isn't counted as runtime. Auto-detect raises (the current config is kept) when the inverter doesn't answer its reads, and never replaces a known model with "unknown".
 
 ## Deye Driver (`inverters/deye.py`)
 
@@ -180,4 +180,4 @@ All via environment variables (`.env` file). See `.env.example` for full templat
 
 Required: `INVERTER_IP`, `LOGGER_SERIAL`
 
-Optional: `SETTINGS_PIN` (settings panel PIN, default `0000`; endpoints behind it use `@require_settings_pin`), `WEATHER_LATITUDE/LONGITUDE`, `OUTAGE_PROVIDER` (lvivoblenergo/yasno/dtek/none), `TELEGRAM_ENABLED`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`
+Optional: `SETTINGS_PIN` (settings panel PIN, default `0000`; endpoints behind it use `@require_settings_pin`, required once a `.env` exists — `settings_protected()`, even when it's invalid and the wizard opens; only a true first start is open), `WEATHER_LATITUDE/LONGITUDE`, `OUTAGE_PROVIDER` (lvivoblenergo/yasno/dtek/none), `TELEGRAM_ENABLED`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`

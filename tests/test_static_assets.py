@@ -26,8 +26,8 @@ def test_index_links_versioned_css_and_js(client):
     # No CSS or app JS left inline; the server's values come as JSON data
     assert "<style>" not in html
     assert "window.DASHBOARD_CONFIG" not in html
-    assert set(page_config(html)) == {"title", "locales", "defaultLanguage", "firstRun", "alertsMapUrl",
-                                      "alertsRegion", "alertsRegionCodes", "inverterTypes"}
+    assert set(page_config(html)) == {"title", "locales", "defaultLanguage", "firstRun", "settingsLocked",
+                                      "alertsMapUrl", "alertsRegion", "alertsRegionCodes", "inverterTypes"}
 
 
 def test_dashboard_title(client, monkeypatch):

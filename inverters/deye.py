@@ -161,11 +161,15 @@ class DeyeInverter(InverterDriver):
         logger.info("Connected to inverter")
 
     def disconnect(self):
-        """Close connection."""
-        if self.inverter:
+        """Close connection. Forgets the client first: if closing fails, the next
+        read still opens a new connection instead of reusing a dead one."""
+        client, self.inverter = self.inverter, None
+        if client:
             logger.debug("Disconnecting from inverter")
-            self.inverter.disconnect()
-            self.inverter = None
+            try:
+                client.disconnect()
+            except Exception as e:
+                logger.debug("Disconnect failed: %s", e)
 
     def read_register(self, address: int) -> int:
         """Read a single holding register."""
@@ -507,6 +511,7 @@ class DeyeInverter(InverterDriver):
 
         # --- Stage 1: detect phase count from L2/L3 voltage (unknown family only) ---
         phases_3 = False
+        answered = 0   # samples the inverter answered: without any, there's nothing to go by
 
         for i in range(0 if family in FAMILY_PHASES else 3):
             logger.info("detect_config stage 1: taking sample %d/3 (phase detection)", i + 1)
@@ -520,6 +525,7 @@ class DeyeInverter(InverterDriver):
                     time.sleep(0.05)
                     v_l3 = self.read_register(646) / 10
                     time.sleep(0.05)
+                    answered += 1
                 except Exception as e:
                     logger.info("detect_config stage 1: L2/L3 voltage read failed: %s", e)
 
@@ -536,6 +542,9 @@ class DeyeInverter(InverterDriver):
 
         if family in FAMILY_PHASES:
             detected_phases = FAMILY_PHASES[family]
+        elif not answered:
+            # A busy logger isn't a single-phase inverter: keep the current config
+            raise RuntimeError("the inverter didn't answer the phase detection reads")
         else:
             detected_phases = 3 if phases_3 else 1
         logger.info("detect_config stage 1 result: phases=%d (family %s)", detected_phases, family)
@@ -608,6 +617,7 @@ class DeyeInverter(InverterDriver):
         )
 
         has_generator = False
+        gen_answered = 0
 
         for i in range(3):
             logger.info("detect_config stage 3: taking sample %d/3 (generator)", i + 1)
@@ -618,6 +628,7 @@ class DeyeInverter(InverterDriver):
                 gen_w = 0
                 try:
                     gen_w = self.read_register(gen_reg)
+                    gen_answered += 1
                 except Exception as e:
                     logger.info("detect_config stage 3: generator read failed: %s", e)
 
@@ -632,6 +643,8 @@ class DeyeInverter(InverterDriver):
             if i < 2:
                 time.sleep(2)
 
+        if not gen_answered:
+            raise RuntimeError("the inverter didn't answer the generator detection reads")
         logger.info("detect_config stage 3 result: has_generator=%s", has_generator)
 
         config = InverterConfig(

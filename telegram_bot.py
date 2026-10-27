@@ -349,7 +349,8 @@ class TelegramBot:
                 time.sleep(2 ** attempt)
 
         if updates is None:
-            self._poll_failures = getattr(self, '_poll_failures', 0) + 1
+            # Capped: the backoff tops out at 60 s long before this
+            self._poll_failures = min(getattr(self, '_poll_failures', 0) + 1, 10)
             return
 
         for update in updates:
@@ -807,11 +808,12 @@ class TelegramBot:
             "Telegram bot started (commands every %ds, inverter every %ds)",
             command_interval, inverter_interval,
         )
-        last_inverter_check = 0
-        last_poll = 0
+        # time.monotonic(): a wall-clock step back (DST, an NTP sync after boot)
+        # would otherwise stall polling and alerts until the clock caught up
+        last_inverter_check = last_poll = float("-inf")
 
         while self._running:
-            now = time.time()
+            now = time.monotonic()
 
             # Back off polling when Telegram API is unreachable
             # Normal: every command_interval. After failures: up to 60s

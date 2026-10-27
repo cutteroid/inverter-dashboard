@@ -7,6 +7,7 @@ reader sees either the old or the new content, never a truncated file.
 import json
 import logging
 import os
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +22,24 @@ def data_path(name):
 
 
 def atomic_write_json(path, data, **dump_kwargs):
-    """Write data as JSON to path atomically (temp file + fsync + rename)."""
-    tmp = f"{path}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, **dump_kwargs)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+    """Write data as JSON to path atomically (temp file + fsync + rename).
+
+    The temp file is unique per process and thread, so two threads saving the
+    same file at once can't write into each other's temp file; the later rename wins.
+    """
+    tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, **dump_kwargs)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def load_json(path, default):

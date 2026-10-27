@@ -27,8 +27,9 @@ import time
 import uuid
 import requests
 
-WEATHER_LATITUDE = os.environ.get("WEATHER_LATITUDE", "0.0")
-WEATHER_LONGITUDE = os.environ.get("WEATHER_LONGITUDE", "0.0")
+# "or": a key saved empty must not end up as "latitude=" in the request
+WEATHER_LATITUDE = os.environ.get("WEATHER_LATITUDE") or "0.0"
+WEATHER_LONGITUDE = os.environ.get("WEATHER_LONGITUDE") or "0.0"
 OPEN_METEO_URL = (
     "https://api.open-meteo.com/v1/forecast"
     f"?latitude={WEATHER_LATITUDE}&longitude={WEATHER_LONGITUDE}"
@@ -102,6 +103,10 @@ def parse_weather(raw):
 class WeatherPoller:
     """Polls Open-Meteo API for current weather conditions."""
 
+    # Without any weather yet (e.g. the NAS booted before its network was up),
+    # try again after this long instead of the full poll interval
+    RETRY_SECONDS = 60
+
     def __init__(self, poll_interval=900):
         self.poll_interval = poll_interval
         self._cache = {}
@@ -116,7 +121,7 @@ class WeatherPoller:
             result = parse_weather(resp.json())
             with self._lock:
                 self._cache = result
-            logger.info("Weather updated: %.1f°C code=%s", result.get("temperature", 0), result.get("weather_code"))
+            logger.info("Weather updated: %s°C code=%s", result.get("temperature"), result.get("weather_code"))
         except Exception:
             logger.exception("Error fetching weather data")
 
@@ -128,7 +133,7 @@ class WeatherPoller:
     def _run(self):
         while True:
             self._fetch()
-            time.sleep(self.poll_interval)
+            time.sleep(self.poll_interval if self.data else self.RETRY_SECONDS)
 
     def start(self):
         t = threading.Thread(target=self._run, daemon=True)
@@ -206,9 +211,8 @@ class InverterPoller:
             return
         try:
             data = load_json(self.cache_file, {})
-            last = data.get("last_updated")
-            if last:
-                age = (datetime.now() - datetime.fromisoformat(last)).total_seconds()
+            if data.get("last_updated"):
+                age = self._age(data)
                 if age < INVERTER_CACHE_MAX_AGE:
                     with self._lock:
                         self._cache = data
@@ -245,6 +249,7 @@ class InverterPoller:
                             result.get("grid_power", 0))
 
             result["last_updated"] = datetime.now().isoformat()
+            result["timestamp"] = time.time()   # for the age: unaffected by DST changes
             if result.get("error"):
                 # A single failed poll (the logger is often briefly busy) keeps the
                 # last good readings; the error only replaces them once they're
@@ -283,10 +288,13 @@ class InverterPoller:
 
     @staticmethod
     def _age(data):
-        """Seconds since the readings were taken (infinite if unknown)."""
+        """Seconds since the readings were taken (infinite if unknown). From the
+        epoch timestamp: local time repeats an hour when the clocks go back."""
         try:
+            if isinstance(data.get("timestamp"), (int, float)):
+                return time.time() - data["timestamp"]
             return (datetime.now() - datetime.fromisoformat(data["last_updated"])).total_seconds()
-        except (KeyError, TypeError, ValueError):
+        except (AttributeError, KeyError, TypeError, ValueError):
             return float("inf")
 
     def _add_runtime_estimate(self, result):
@@ -463,6 +471,10 @@ def refresh_inverter_config(inv, config):
     except Exception as e:
         logger.warning("Auto-detect failed (%s), keeping %s", e, config.to_dict())
         return
+    if detected.family == "unknown" and config.family != "unknown":
+        # The model register didn't answer this time: keep the model already known
+        detected.device_type, detected.family = config.device_type, config.family
+        detected.supported = config.supported
     try:
         atomic_write_json(INVERTER_CONFIG_FILE, detected.to_dict())
     except OSError:
@@ -476,10 +488,13 @@ def refresh_inverter_config(inv, config):
 
 def refresh_device_type(inv, config):
     """Read only the device type (capabilities all set in env, so no full detection)."""
-    device_type, family = inv.read_device_type()
-    if family != "unknown" or device_type is not None:
-        config.device_type, config.family = device_type, family
-        config.supported = inv.family_supported(family)
+    try:
+        device_type, family = inv.read_device_type()
+        if family != "unknown" or device_type is not None:
+            config.device_type, config.family = device_type, family
+            config.supported = inv.family_supported(family)
+    except Exception:
+        logger.exception("Device type check failed, keeping %s", config.to_dict())
 
 
 # Service variables — initialised by init_services() when configured
@@ -493,6 +508,16 @@ alerts_poller = None
 smart_meter = None
 
 _configured = is_configured()
+
+# The app's .env (in Docker a link to data/.env)
+ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+
+
+def settings_protected():
+    """Do the settings need the PIN? Yes once there is a configuration, even an
+    invalid one (it then opens the setup wizard, but its tokens and PIN still
+    need protecting); only a true first start, without .env, is open."""
+    return _configured or os.path.exists(ENV_FILE) or bool(os.environ.get("SETTINGS_PIN"))
 
 # New on every start: after saving the settings, the page waits for a new value
 # before reloading, so it doesn't reload from the process that is about to exit
@@ -533,19 +558,18 @@ def check_settings_pin(pin):
 
 def _pin_error(retry_after):
     if retry_after:
-        return jsonify({"status": "error", "error": "Too many attempts",
+        return jsonify({"status": "error", "error": "Too many attempts", "pin_required": True,
                         "retry_after": retry_after}), 429
-    return jsonify({"status": "error", "error": "Invalid PIN"}), 401
+    return jsonify({"status": "error", "error": "Invalid PIN", "pin_required": True}), 401
 
 
 def require_settings_pin(view):
-    """Require a valid X-Settings-Pin header once the dashboard is configured.
-
-    First-run onboarding stays open: there is no config to protect yet.
+    """Require a valid X-Settings-Pin header once there is a configuration
+    (settings_protected). A true first start stays open: nothing to protect yet.
     """
     @wraps(view)
     def wrapper(*args, **kwargs):
-        if _configured:
+        if settings_protected():
             ok, retry_after = check_settings_pin(request.headers.get("X-Settings-Pin"))
             if not ok:
                 return _pin_error(retry_after)
@@ -615,8 +639,10 @@ def init_services():
 # request threads (e.g. "clear"); this lock keeps those updates from interleaving.
 _data_lock = threading.RLock()
 
-# Phase data collection
+# Phase data collection: time.monotonic() of the last sample (the energy
+# between two samples needs a clock that doesn't go back an hour in October)
 last_sample_time = None
+PHASE_SAMPLE_MAX_GAP_SECONDS = 360
 
 
 def load_grid_daily_log():
@@ -629,16 +655,42 @@ def save_grid_daily_log(log):
     atomic_write_json(GRID_DAILY_LOG_FILE, log, indent=2)
 
 
-def record_grid_daily_import(daily_kwh):
+# The inverter's daily import counter resets at the inverter's own midnight,
+# which drifts from this machine's clock. A drop of the counter within
+# GRID_DAY_DRIFT of midnight is that reset: the reading before it is the
+# finished day's total, the readings after it count for the next day, on
+# whichever side of our midnight it happened. Without a reset seen (no import
+# all day, or the app just started) a reading counts for our own date; within
+# GRID_DAY_DRIFT of midnight that's a guess, so it may only raise a day's
+# value. A drop at any other time is a glitch and skipped.
+GRID_DAY_DRIFT = timedelta(hours=1)
+_grid_counter = {"last": None, "day": None}   # last reading, the date it counts for
+
+
+def record_grid_daily_import(daily_kwh, now=None):
     with _data_lock:
-        return _record_grid_daily_import(daily_kwh)
+        return _record_grid_daily_import(daily_kwh, now)
 
 
-def _record_grid_daily_import(daily_kwh):
-    """Record today's daily grid import value, overwriting previous entry."""
-    today = datetime.now().strftime("%Y-%m-%d")
+def _record_grid_daily_import(daily_kwh, now=None):
+    """Record the inverter's daily grid import counter (kWh) for the day it counts."""
+    now = now or datetime.now()
+    last, day = _grid_counter["last"], _grid_counter["day"]
+    midnight = datetime.combine((now + GRID_DAY_DRIFT).date(), datetime.min.time())
+    near_midnight = abs(now - midnight) <= GRID_DAY_DRIFT
     log = load_grid_daily_log()
-    log[today] = daily_kwh
+    sure = not near_midnight
+    if last is not None and daily_kwh < last:
+        if not near_midnight:
+            return  # a glitch, not the daily reset
+        ended = midnight.date() - timedelta(days=1)
+        log[ended.isoformat()] = last
+        day, sure = midnight.date(), True
+    if day is None or (day < now.date() and not near_midnight):
+        day = now.date()
+    _grid_counter["last"], _grid_counter["day"] = daily_kwh, day
+    key = day.isoformat()
+    log[key] = daily_kwh if sure else max(log.get(key) or 0, daily_kwh)
     # Keep only last 90 days
     sorted_dates = sorted(log.keys(), reverse=True)
     if len(sorted_dates) > 90:
@@ -660,11 +712,22 @@ def save_generator_log(log):
 # Generator runtime tracking state
 generator_last_running = None
 generator_session_start = None
+# An open session whose last reading ("last_seen") is older than this when the
+# app starts again ended while the app was down: it's closed at that reading
+GENERATOR_RESUME_GAP = timedelta(minutes=5)
 
 
 def track_generator_runtime(generator_power, now=None):
     with _data_lock:
         return _track_generator_runtime(generator_power, now)
+
+
+def _parse_time(text):
+    """ISO date-time string -> datetime, None if missing or invalid."""
+    try:
+        return datetime.fromisoformat(text) if text else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _find_open_generator_session(log):
@@ -698,9 +761,19 @@ def _track_generator_runtime(generator_power, now=None):
         # First reading since start: resume a session left open by a restart
         day, session = _find_open_generator_session(log)
         if session:
-            generator_session_start = datetime.strptime(f"{day} {session['start']}", "%Y-%m-%d %H:%M:%S")
-            generator_last_running = True
-            logger.info("Resuming generator session started %s", generator_session_start)
+            start = datetime.strptime(f"{day} {session['start']}", "%Y-%m-%d %H:%M:%S")
+            last_seen = _parse_time(session.get("last_seen"))
+            if last_seen and now - last_seen > GENERATOR_RESUME_GAP:
+                # The app was down: what the generator did meanwhile is unknown, so
+                # the session counts up to its last reading (not up to now)
+                log[day]["runtime_seconds"] += int((last_seen - start).total_seconds())
+                session["end"] = last_seen.strftime("%H:%M:%S")
+                session.pop("last_seen", None)
+                logger.info("Generator session %s - %s closed (app was down since)", start, last_seen)
+            else:
+                generator_session_start = start
+                generator_last_running = True
+                logger.info("Resuming generator session started %s", generator_session_start)
 
     # Split a session that crossed midnight: close it at midnight, continue today
     while generator_last_running and generator_session_start and generator_session_start.date() < now.date():
@@ -710,6 +783,7 @@ def _track_generator_runtime(generator_power, now=None):
         day_log["runtime_seconds"] += int((midnight - generator_session_start).total_seconds())
         if day_log["sessions"] and day_log["sessions"][-1]["end"] is None:
             day_log["sessions"][-1]["end"] = "24:00:00"
+            day_log["sessions"][-1].pop("last_seen", None)
         next_day = log.setdefault(midnight.strftime("%Y-%m-%d"), {"runtime_seconds": 0, "sessions": []})
         next_day["sessions"].append({"start": "00:00:00", "end": None})
         generator_session_start = midnight
@@ -729,7 +803,11 @@ def _track_generator_runtime(generator_power, now=None):
             # Close the last open session
             if log[today]["sessions"] and log[today]["sessions"][-1]["end"] is None:
                 log[today]["sessions"][-1]["end"] = now.strftime("%H:%M:%S")
+                log[today]["sessions"][-1].pop("last_seen", None)
         generator_session_start = None
+    if running and log[today]["sessions"] and log[today]["sessions"][-1]["end"] is None:
+        # The latest reading of the open session, for a restart (see above)
+        log[today]["sessions"][-1]["last_seen"] = now.isoformat(timespec="seconds")
 
     generator_last_running = running
 
@@ -780,11 +858,12 @@ def _record_phase_sample(load_l1, load_l2, load_l3):
         }
 
     # Calculate energy (Wh) from power (W) and time interval
-    if last_sample_time:
-        interval_hours = (now - last_sample_time).total_seconds() / 3600
-
-        # Only accumulate if interval is reasonable (< 5 minutes)
-        if interval_hours < 0.1:
+    sample_time = time.monotonic()
+    if last_sample_time is not None:
+        interval = sample_time - last_sample_time
+        # Only accumulate over a reasonable interval (no gap after downtime)
+        if 0 < interval < PHASE_SAMPLE_MAX_GAP_SECONDS:
+            interval_hours = interval / 3600
             stats[today]["l1_wh"] += load_l1 * interval_hours
             stats[today]["l2_wh"] += load_l2 * interval_hours
             stats[today]["l3_wh"] += load_l3 * interval_hours
@@ -795,7 +874,7 @@ def _record_phase_sample(load_l1, load_l2, load_l3):
     stats[today]["l3_max"] = max(stats[today]["l3_max"], load_l3)
     stats[today]["samples"] += 1
 
-    last_sample_time = now
+    last_sample_time = sample_time
 
     # Keep only last 30 days
     sorted_dates = sorted(stats.keys(), reverse=True)
@@ -835,6 +914,8 @@ def index():
         "locales": LOCALES,
         "defaultLanguage": DEFAULT_LANGUAGE,
         "firstRun": not _configured,
+        # First run over an existing (invalid) .env: the wizard asks for the PIN first
+        "settingsLocked": not _configured and settings_protected(),
         "alertsMapUrl": asset_version_url("data/ukraine-regions.json"),
         "alertsRegion": region if region in REGION_CODES else "",
         "alertsRegionCodes": list(REGION_CODES),
@@ -1075,7 +1156,8 @@ def get_generator():
 @app.route("/api/settings/verify-pin", methods=["POST"])
 def verify_settings_pin():
     """Check the PIN entered to open the settings panel."""
-    ok, retry_after = check_settings_pin((request.json or {}).get("pin"))
+    body = request.get_json(silent=True)
+    ok, retry_after = check_settings_pin(body.get("pin") if isinstance(body, dict) else None)
     if not ok:
         return _pin_error(retry_after)
     return jsonify({"status": "ok"})
@@ -1234,7 +1316,7 @@ def start_telegram_bot():
     user_ids = set()
     for uid in allowed.split(","):
         uid = uid.strip()
-        if uid.isdigit():
+        if uid.isascii() and uid.isdigit():
             user_ids.add(int(uid))
 
     state_file = os.environ.get("BOT_STATE_FILE") or data_path("bot_state.json")
