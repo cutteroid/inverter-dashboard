@@ -33,7 +33,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-from meter_outages import PARTIAL, TOTAL, OutageLog
+from meter_outages import DEFAULT_SWITCH_ON_DELAY, PARTIAL, TOTAL, OutageLog
 from storage import atomic_write_json, data_path, load_json
 
 logger = logging.getLogger(__name__)
@@ -76,13 +76,14 @@ class SmartMeter:
     ENERGY_KEYS = ("posWh", "negWh")
 
     def __init__(self, serial_filter=None, daily_file="smart_meter_daily.json", clock=datetime.now, demo=False,
-                 outages_file=None):
+                 outages_file=None, switch_on_delay=DEFAULT_SWITCH_ON_DELAY):
         self.serial_filter = serial_filter or None
         self.daily_file = daily_file  # None: keep today's baseline in memory only
         self.clock = clock
         self.demo = demo
         # Grid outages it sees (today and yesterday); outages_file None: in memory only
-        self.outages = OutageLog(outages_file, clock=clock)
+        # switch_on_delay: the meter's own setting (seconds), see meter_outages.py
+        self.outages = OutageLog(outages_file, clock=clock, switch_on_delay=switch_on_delay)
         # () -> True / False / None: does the inverter have the grid now? Set by the
         # app; tells a real outage from the meter only losing its Wi-Fi
         self.grid_online_hint = None
@@ -595,9 +596,14 @@ def create_smart_meter_from_env(environ=os.environ):
         interval = max(0, min(60, int(environ.get("SMART_METER_INTERVAL", "10"))))
     except ValueError:
         interval = 10
+    try:
+        switch_on_delay = max(0, min(3600, int(environ.get("SMART_METER_SWITCH_ON_DELAY", DEFAULT_SWITCH_ON_DELAY))))
+    except ValueError:
+        switch_on_delay = DEFAULT_SWITCH_ON_DELAY
     meter = SmartMeter(serial_filter=environ.get("SMART_METER_SERIAL") or None,
                        daily_file=environ.get("SMART_METER_DAILY_FILE") or default_daily_file(),
-                       outages_file=environ.get("SMART_METER_OUTAGES_FILE") or default_outages_file())
+                       outages_file=environ.get("SMART_METER_OUTAGES_FILE") or default_outages_file(),
+                       switch_on_delay=switch_on_delay)
     client = SmartMeterClient(
         meter,
         host=environ.get("SMART_METER_MQTT_HOST") or default_broker_host(),

@@ -12,7 +12,7 @@ the open outage and/or opens a new one. A partial outage stays one entry while
 any phase is missing (the phases seen missing add up); it ends when all are
 back, or turns into a total outage. Outages under MIN_SECONDS are dropped. The
 meter's wait before it switches the house back on after an outage (every phase
-disconnected, RESTORE_SECONDS at most) is part of that outage. The open
+disconnected, up to its switch-on delay) is part of that outage. The open
 outage is saved too, so a restart during an outage keeps its start. Entries
 from before yesterday are dropped.
 """
@@ -29,12 +29,16 @@ PARTIAL = "partial"
 # Shorter ones aren't kept: the meter sends V1, V2, V3 one by one, so a change
 # of all phases passes through a split second of "some phases missing"
 MIN_SECONDS = 10
-# After the grid returns, the meter keeps every phase disconnected for a while
-# before switching the house back on (seen live: 110 s). A partial outage with
-# every phase cut and voltage on all of them ("restore") that starts as a total
-# one ends is added to it if it lasts up to this long; a longer one is the
-# meter's protection keeping the house off, and an entry of its own.
-RESTORE_SECONDS = 300
+# After the grid returns, the meter keeps every phase disconnected for its
+# switch-on delay (a setting in the meter's app, not in its MQTT data; default
+# here 120 s, SMART_METER_SWITCH_ON_DELAY) before switching the house back on.
+# It's seen ~10 s shorter (110 s live): the delay starts at power-on, the meter
+# reports after joining Wi-Fi. A partial outage with every phase cut and voltage
+# on all of them ("restore") that starts as a total one ends is added to it if
+# it lasts up to the delay plus RESTORE_MARGIN_SECONDS (late relay messages);
+# a longer one is the meter's protection keeping the house off, an entry of its own.
+DEFAULT_SWITCH_ON_DELAY = 120
+RESTORE_MARGIN_SECONDS = 60
 JOIN_GAP_SECONDS = 10
 
 
@@ -43,9 +47,10 @@ def _iso(dt):
 
 
 class OutageLog:
-    def __init__(self, path=None, clock=datetime.now):
+    def __init__(self, path=None, clock=datetime.now, switch_on_delay=DEFAULT_SWITCH_ON_DELAY):
         self.path = path   # None: in memory only (demo meter)
         self.clock = clock
+        self.restore_seconds = switch_on_delay + RESTORE_MARGIN_SECONDS
         self._lock = threading.Lock()
         self._events = []  # closed outages, oldest first: {type, start, end, phases, cut}
         self._open = None  # the outage going on now, same keys without "end"
@@ -113,7 +118,7 @@ class OutageLog:
             return False
         start = datetime.fromisoformat(outage["start"])
         gap = (start - datetime.fromisoformat(self._events[-1]["end"])).total_seconds()
-        return 0 <= gap <= JOIN_GAP_SECONDS and (until - start).total_seconds() <= RESTORE_SECONDS
+        return 0 <= gap <= JOIN_GAP_SECONDS and (until - start).total_seconds() <= self.restore_seconds
 
     def _joins_previous(self, ended, at):
         """Add the meter's wait to the outage before it (caller holds the lock)."""

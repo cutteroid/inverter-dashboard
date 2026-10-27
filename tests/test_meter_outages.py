@@ -235,7 +235,7 @@ def test_the_meter_waiting_to_switch_back_on_is_part_of_the_outage(clock):
 
 
 def test_a_long_wait_is_the_meters_protection_and_its_own_entry(clock):
-    """Every phase kept off for longer than RESTORE_SECONDS (e.g. the voltage out
+    """Every phase kept off for longer than the switch-on delay (e.g. the voltage out
     of range after the outage): a partial entry after the "No grid" one."""
     m = _meter_with_relays(clock)
     m.handle_message("buckler/M1/status", "offline")
@@ -262,3 +262,29 @@ def test_all_phases_cut_without_an_outage_before_is_partial(clock):
     out = m.get_outages()["outages"]
     assert [(e["type"], e["cut"]) for e in out] == [("partial", [1, 2, 3])]
     assert "restore" not in out[0]
+
+
+def test_switch_on_delay_setting(clock, monkeypatch):
+    """A meter set to a 10-minute delay: a 9-minute wait is still part of the outage."""
+    m = SmartMeter(daily_file=None, clock=clock, switch_on_delay=600)
+    volts(m, 230, 231, 229)
+    for r in (1, 2, 3):
+        m.handle_message(f"buckler/M1/relay/r{r}", "100")
+    m.handle_message("buckler/M1/status", "offline")
+    clock.advance(minutes=30)
+    m.check_offline()
+    _boot_with_relays_off(m)
+    clock.advance(minutes=9)
+    _relays_on(m)
+    assert [(e["type"], e["end"][11:16]) for e in m.get_outages()["outages"]] == [("total", "12:39")]
+
+
+@pytest.mark.parametrize("value, expected", [(None, 180), ("300", 360), ("abc", 180), ("-5", 60)])
+def test_switch_on_delay_from_env(value, expected, tmp_path):
+    from smart_meter import create_smart_meter_from_env
+    env = {"SMART_METER_ENABLED": "true", "SMART_METER_DAILY_FILE": str(tmp_path / "d.json"),
+           "SMART_METER_OUTAGES_FILE": str(tmp_path / "o.json")}
+    if value is not None:
+        env["SMART_METER_SWITCH_ON_DELAY"] = value
+    meter, _ = create_smart_meter_from_env(env)
+    assert meter.outages.restore_seconds == expected   # the delay plus the margin
