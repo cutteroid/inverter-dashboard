@@ -77,17 +77,21 @@ def test_six_relays_are_not_per_phase(clock):
     assert m.get_outages()["outages"] == []
 
 
-def test_offline_meter_is_a_total_outage_from_when_it_went_offline(clock):
+def test_offline_meter_is_a_total_outage_from_its_last_message(clock):
+    """Without the inverter: the "offline" status (late: the broker sends it when the
+    meter's keepalive runs out) is needed, but the outage starts at the last message."""
     m = SmartMeter(daily_file=None, clock=clock)
     volts(m, 230, 231, 229)
     clock.advance(minutes=2)
+    m.check_offline()
+    assert m.get_outages()["outages"] == []         # silent, but nothing says why
     m.handle_message("buckler/M1/status", "offline")
     clock.advance(seconds=30)
     m.check_offline()
     assert m.get_outages()["outages"] == []         # within the grace: a reconnect, maybe
     clock.advance(seconds=OFFLINE_GRACE.total_seconds())
     out = m.get_outages()["outages"]
-    assert out == [{"type": "total", "start": "2026-10-26T12:02:00", "end": None, "phases": [], "cut": []}]
+    assert out == [{"type": "total", "start": "2026-10-26T12:00:00", "end": None, "phases": [], "cut": []}]
     clock.advance(minutes=40)
     m.handle_message("buckler/M1/data/P1", "120")   # back: any data ends it
     assert m.get_outages()["outages"][0]["end"] == "2026-10-26T12:44:00"
@@ -102,6 +106,51 @@ def test_offline_meter_while_the_inverter_has_the_grid_is_not_an_outage(clock):
     assert m.get_outages()["outages"] == []
     m.grid_online_hint = lambda: None                # unknown: the meter decides
     assert m.get_outages()["outages"][0]["type"] == "total"
+
+
+def test_silent_meter_and_no_grid_at_the_inverter_is_an_outage_at_once(clock):
+    """Seen live: the meter lost power at 01:02, the broker's "offline" came at 01:14
+    and the meter's data only at 01:20, though the grid was back at 01:14. The
+    outage is from the last message until the inverter sees the grid again."""
+    clock.now = datetime(2026, 10, 28, 1, 0, 0)
+    grid = [True]
+    m = SmartMeter(daily_file=None, clock=clock)
+    m.grid_online_hint = lambda: grid[0]
+    for _ in range(13):                              # every 10 s up to 01:02:00
+        volts(m, 230, 231, 229)
+        clock.advance(seconds=10)
+    clock.advance(seconds=-10)
+    grid[0] = False                                  # the grid (and the meter) go
+    clock.advance(seconds=OFFLINE_GRACE.total_seconds())
+    m.check_offline()
+    assert m.get_outages()["outages"] == [
+        {"type": "total", "start": "2026-10-28T01:02:00", "end": None, "phases": [], "cut": []}]
+    clock.now = datetime(2026, 10, 28, 1, 14, 24)
+    m.handle_message("buckler/M1/status", "offline")  # the broker, 12 minutes late
+    clock.now = datetime(2026, 10, 28, 1, 16, 10)
+    grid[0] = True                                   # the meter has switched the house back on
+    m.check_offline()
+    clock.now = datetime(2026, 10, 28, 1, 20, 52)
+    volts(m, 230, 231, 229)                          # its data, at last
+    assert m.get_outages()["outages"] == [
+        {"type": "total", "start": "2026-10-28T01:02:00", "end": "2026-10-28T01:16:10", "phases": [], "cut": []}]
+
+
+def test_silent_meter_while_the_inverter_has_the_grid_then_an_outage(clock):
+    """The meter only lost its connection: no outage; when the grid goes later, the
+    outage starts when the inverter last had it, not at the meter's last message."""
+    grid = [True]
+    m = SmartMeter(daily_file=None, clock=clock)
+    m.grid_online_hint = lambda: grid[0]
+    volts(m, 230, 231, 229)
+    for _ in range(20):                              # 5 minutes of checks
+        clock.advance(seconds=15)
+        m.check_offline()
+    assert m.get_outages()["outages"] == []
+    grid[0] = False
+    clock.advance(seconds=15)
+    m.check_offline()
+    assert m.get_outages()["outages"][0]["start"] == "2026-10-26T12:05:00"
 
 
 def test_single_phase(clock):
@@ -288,3 +337,22 @@ def test_switch_on_delay_from_env(value, expected, tmp_path):
         env["SMART_METER_SWITCH_ON_DELAY"] = value
     meter, _ = create_smart_meter_from_env(env)
     assert meter.outages.restore_seconds == expected   # the delay plus the margin
+
+
+@pytest.mark.parametrize("readings, expected", [
+    ({"grid_state": "online", "grid_online": True}, True),
+    ({"grid_state": "out_of_range", "grid_online": False}, True),   # voltage back, inverter still waiting
+    ({"grid_state": "partial", "grid_online": False}, False),
+    ({"grid_state": "outage", "grid_online": False}, False),
+    ({"grid_online": True}, True),                                  # a driver without grid_state
+    ({"error": "timeout"}, None),
+])
+def test_inverter_grid_hint(readings, expected, monkeypatch):
+    import time
+
+    import app as app_module
+
+    class Poller:
+        data = dict(readings, timestamp=time.time())
+    monkeypatch.setattr(app_module, "inverter_poller", Poller())
+    assert app_module.inverter_grid_online() is expected

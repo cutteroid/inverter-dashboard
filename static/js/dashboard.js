@@ -1135,7 +1135,7 @@ setInterval(updateDashboard, 5000);
 setInterval(loadPhaseStats, 30000);
 
 // ===== SPARKLINES =====
-// Battery charge, solar and load over the last 24 hours: 5-minute averages
+// Battery charge, solar, load and smart meter power over the last 24 hours: 5-minute averages
 // from /api/history (history.py), drawn from the first reading to the latest
 // (with less than a day of history the caption says since when). A gap in the
 // data (dashboard off, no reading) breaks the line.

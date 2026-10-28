@@ -676,6 +676,8 @@ def init_services():
     inverter_poller.start()
     if smart_meter is not None:
         smart_meter.grid_online_hint = inverter_grid_online
+        power_history.set_meter_demo(smart_meter.demo)
+        smart_meter.history = power_history
 
 
 
@@ -1013,7 +1015,7 @@ def get_data():
 
 @app.route("/api/history")
 def get_history():
-    """Battery charge, solar and load over the last 24 hours, 5-minute averages (history.py)
+    """Battery charge, solar, load and smart meter power over the last 24 hours, 5-minute averages (history.py)
     for the cards' sparklines. Empty lists until the first readings."""
     if power_history is None:
         return jsonify(PowerHistory().series())
@@ -1125,10 +1127,17 @@ def get_meter_outages():
 
 
 def inverter_grid_online():
-    """Does the inverter have the grid now (fresh readings only)? None: unknown."""
+    """Does the inverter see the grid now (fresh readings only)? None: unknown.
+    Voltage on every phase counts, also while the inverter itself stays
+    disconnected ("out_of_range", e.g. its reconnect wait): the grid is there."""
     data = inverter_poller.data if inverter_poller else None
     if not data or data.get("error") or InverterPoller._age(data) > 120:
         return None
+    state = data.get("grid_state")
+    if state in ("online", "out_of_range"):
+        return True
+    if state in ("partial", "outage"):
+        return False
     online = data.get("grid_online")
     return online if isinstance(online, bool) else None
 

@@ -540,6 +540,7 @@
                 <div class="metric-label" data-i18n="common.power_now">Power now</div>
                 <div class="metric-value neutral" id="meter-power">--<span class="unit" data-i18n="units.w">W</span></div>
             </div>
+            {{ sparkline("meter", "meter") }}
             <div class="stats-row" id="meter-single-phase">
                 <div class="stat">
                     <div class="value" id="meter-voltage">--</div>

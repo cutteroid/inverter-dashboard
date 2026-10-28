@@ -29,7 +29,7 @@ def test_a_new_bucket_closes_the_last_one_and_saves(tmp_path):
     assert not path.exists()  # written when a bucket closes, not on every poll
     h.add(reading(pv=3000), now=T0 + 310)
     saved = json.loads(path.read_text())
-    assert saved == {"bucket_seconds": 300, "buckets": [[T0, 50.0, 1000, 400]]}
+    assert saved == {"bucket_seconds": 300, "buckets": [[T0, 50.0, 1000, 400, None]]}
     assert h.series(now=T0 + 320)["pv"] == [1000, 3000]
 
 
@@ -58,6 +58,49 @@ def test_missing_readings_are_none():
     h.add({"pv_total_power": 800, "load_power": 300, "battery_soc": None}, now=T0)
     s = h.series(now=T0 + 1)
     assert s["soc"] == [None] and s["pv"] == [800]
+
+
+def test_meter_power_is_its_own_series():
+    """The smart meter adds only its power, at its own pace: the inverter's series keep their averages."""
+    h = PowerHistory()
+    h.add(reading(load=400), now=T0 + 10)
+    h.add({"meter_power": 300}, now=T0 + 20)
+    h.add({"meter_power": 500}, now=T0 + 35)
+    s = h.series(now=T0 + 40)
+    assert s["meter"] == [400] and s["load"] == [400] and s["pv"] == [1000]
+
+
+def test_file_from_before_the_meter_series_is_kept(tmp_path):
+    path = tmp_path / "history.json"
+    path.write_text(json.dumps({"bucket_seconds": 300, "buckets": [[T0, 50.0, 1000, 400]]}))
+    s = PowerHistory(str(path)).series(now=T0 + 400)
+    assert s["t"] == [T0] and s["load"] == [400] and s["meter"] == [None]
+
+
+def test_switching_from_demo_to_a_real_meter_drops_the_demo_readings(tmp_path, monkeypatch):
+    path = str(tmp_path / "history.json")
+    h = PowerHistory(path)
+    h.set_meter_demo(True)
+    h.add({**reading(load=400), "meter_power": 999}, now=T0 + 10)
+    h.add({**reading(load=500), "meter_power": 888}, now=T0 + 310)   # closes and saves the first bucket
+    monkeypatch.setattr("history.time.time", lambda: T0 + 320)
+    again = PowerHistory(path)                                        # restarted with a real meter
+    again.set_meter_demo(False)
+    s = again.series(now=T0 + 320)
+    assert s["meter"] == [None] and s["load"] == [400]                # the inverter's series stay
+    assert json.loads((tmp_path / "history.json").read_text())["buckets"] == [[T0, 50.0, 1000, 400, None]]
+
+
+def test_same_meter_keeps_its_readings(tmp_path, monkeypatch):
+    path = str(tmp_path / "history.json")
+    h = PowerHistory(path)
+    h.set_meter_demo(False)
+    h.add({"meter_power": 300}, now=T0 + 10)
+    h.add({"meter_power": 400}, now=T0 + 310)
+    monkeypatch.setattr("history.time.time", lambda: T0 + 320)
+    again = PowerHistory(path)
+    again.set_meter_demo(False)
+    assert again.series(now=T0 + 320)["meter"] == [300]
 
 
 def test_bad_files_are_ignored(tmp_path):

@@ -704,6 +704,7 @@ body.fullscreen-mode .battery-runtime-value {
 
 .spark-solar { --spark-rgb: var(--amber-400-rgb); }
 .spark-battery { --spark-rgb: var(--mint-400-rgb); }
+.spark-meter { --spark-rgb: var(--violet-300-rgb); }
 
 /* The battery card's sparkline sits under the charge bar */
 .battery-gauge + .sparkline {

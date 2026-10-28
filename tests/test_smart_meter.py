@@ -159,6 +159,17 @@ def test_stale_and_offline(timed):
     assert meter.get_status()["status"] == "stale"
 
 
+def test_power_recorded_for_the_sparkline_while_current(timed):
+    meter, advance = timed
+    meter.history = MagicMock()
+    meter.record_history()                                    # no readings yet: nothing
+    meter.handle_message("buckler/1/data/P", "412")
+    meter.record_history()
+    advance(STALE_AFTER.total_seconds() + 1)
+    meter.record_history()                                    # stale: the old value isn't repeated
+    assert [c.args for c in meter.history.add.call_args_list] == [({"meter_power": 412.0},)]
+
+
 @pytest.mark.parametrize("topic,payload", [
     ("buckler/1/data/P", "412"),
     ("buckler/1/dataJson", json.dumps(SINGLE_PHASE_JSON)),

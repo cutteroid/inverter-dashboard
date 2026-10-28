@@ -95,6 +95,14 @@ class SmartMeter:
         # () -> True / False / None: does the inverter have the grid now? Set by the
         # app; tells a real outage from the meter only losing its Wi-Fi
         self.grid_online_hint = None
+        # check_offline: when the inverter last had the grid while the meter was
+        # silent, and whether the open total outage is one the meter went silent for
+        self._grid_seen_at = None
+        self._silent_outage = False
+        self._heard_at = None   # its last live message (the broker's "offline" isn't one)
+        # history.PowerHistory for the card's sparkline (set by the app), fed by
+        # record_history()
+        self.history = None
         self._lock = threading.Lock()
         # Energy counters at the start of today: {"date": "YYYY-MM-DD", "posWh": .., "negWh": ..}
         daily = load_json(daily_file, {}) if daily_file else {}
@@ -156,6 +164,9 @@ class SmartMeter:
             self.handle_message(stored_topic, stored_payload, retained=True)
         text = payload.decode("utf-8", "replace") if isinstance(payload, (bytes, bytearray)) else str(payload)
         kind = parts[2]
+        if not retained and not (kind == "status" and text.strip().lower() != "online"):
+            with self._lock:
+                self._heard_at = self.clock()
         if kind == "status" and len(parts) == 3:
             online = text.strip().lower() == "online"
             with self._lock:
@@ -237,10 +248,11 @@ class SmartMeter:
         if self._online is False and self._offline_at is not None:
             logger.info("Smart meter: sending data again %.0fs after reporting offline",
                         (self.clock() - self._offline_at).total_seconds())
-        if self._online is False and self.outages.open_type == TOTAL:
+        if (self._online is False or self._silent_outage) and self.outages.open_type == TOTAL:
             # Back after an outage it was offline for; its voltages (next readings)
             # tell whether a phase is still missing
             self.outages.update("ok")
+        self._silent_outage = False
         self._online = True
         self._offline_at = None
 
@@ -268,20 +280,56 @@ class SmartMeter:
             self.outages.update("ok")
 
     def check_offline(self):
-        """Offline for OFFLINE_GRACE: the meter (powered by the grid) has no grid,
-        so a total outage from when it went offline. Unless the inverter still has
-        the grid: then the meter only lost its connection. Runs every few seconds
-        (SmartMeterClient) and on each outage log request."""
+        """Silent for OFFLINE_GRACE: the meter (powered by the grid) has no grid,
+        so a total outage from its last message, when the inverter doesn't see the
+        grid either. Doesn't wait for the "offline" status: the broker sends it
+        only when the meter's keepalive runs out or it reconnects (seen live: 12
+        minutes late). Without the inverter (unknown) it takes that status too.
+        When the inverter has the grid, the meter only lost its connection, or,
+        during such an outage, the grid is back before the meter is (seen live: its
+        data came 6 minutes after its power): that ends the outage. Runs every few
+        seconds (SmartMeterClient) and on each outage log request."""
+        now = self.clock()
         with self._lock:
-            offline_at = self._offline_at
+            heard_at, offline_at = self._heard_at, self._offline_at
+            silent = heard_at is not None and now - heard_at >= OFFLINE_GRACE
             offline = (self._online is False and offline_at is not None
-                       and self.clock() - offline_at >= OFFLINE_GRACE)
-        if not offline or self.outages.open_type == TOTAL:
+                       and now - offline_at >= OFFLINE_GRACE
+                       and (heard_at is None or heard_at <= offline_at))
+            grid_seen_at = self._grid_seen_at
+        if not (silent or offline):
             return
+        since = heard_at or offline_at
         hint = self.grid_online_hint() if self.grid_online_hint else None
-        if hint is True:
+        if hint is None and not offline:
             return
-        self.outages.update(TOTAL, at=offline_at)
+        open_type = self.outages.open_type
+        if hint is True:
+            with self._lock:
+                self._grid_seen_at = now
+                end_outage, self._silent_outage = self._silent_outage and open_type == TOTAL, False
+            if end_outage:
+                logger.info("Smart meter: still silent, but the inverter has the grid again: outage over")
+                self.outages.update("ok", at=now)
+            return
+        if open_type == TOTAL:
+            return
+        # From the last reading, or the last time the inverter had the grid when
+        # the meter was silent for longer (it lost only its connection then)
+        start = max(since, grid_seen_at) if grid_seen_at is not None else since
+        with self._lock:
+            self._silent_outage = True
+        self.outages.update(TOTAL, at=start)
+
+    def record_history(self):
+        """Add the power now to the sparkline history, while the readings are
+        current. Runs every few seconds (SmartMeterClient, DemoMeterFeed), so the
+        5-minute averages don't depend on how often the meter sends data."""
+        if self.history is None:
+            return
+        status = self.get_status()
+        if status["status"] == "ok" and status["power_w"] is not None:
+            self.history.add({"meter_power": status["power_w"]})
 
     def get_outages(self):
         """Outage log for the API: today's and yesterday's outages, newest first."""
@@ -460,13 +508,18 @@ class SmartMeterClient:
         threading.Thread(target=self._watch_offline, name="smart-meter-outages", daemon=True).start()
 
     def _watch_offline(self):
-        """An outage the meter goes offline for sends nothing more: notice it."""
+        """An outage the meter goes offline for sends nothing more: notice it.
+        Also samples the power for the sparkline."""
         while True:
             time.sleep(15)
             try:
                 self.meter.check_offline()
             except Exception:
                 logger.exception("Smart meter: outage check failed")
+            try:
+                self.meter.record_history()
+            except Exception:
+                logger.exception("Smart meter: history update failed")
 
     def _on_connect(self, client, userdata, flags, reason_code, properties):
         if reason_code.is_failure:
@@ -545,6 +598,7 @@ class DemoMeterFeed:
             time.sleep(self.UPDATE_SECONDS)
             try:
                 self.tick()
+                self.meter.record_history()
             except Exception:
                 logger.exception("Smart meter demo: tick failed")
 
