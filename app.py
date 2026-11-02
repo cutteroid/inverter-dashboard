@@ -1010,6 +1010,10 @@ def get_data():
     age = InverterPoller._age(data)
     if age != float("inf"):
         data["data_age_seconds"] = max(0, int(age))
+    if smart_meter is not None:
+        # Phases the smart meter cut with the grid there (the banner tells that
+        # from an outage: the inverter sees no voltage either way); None: unknown
+        data["meter_cut"] = smart_meter.phases_cut()
     return jsonify(data)
 
 
@@ -1414,6 +1418,7 @@ def start_telegram_bot():
         is_public=is_public,
         inverter_poller=inverter_poller,
         readiness=current_outage_readiness,
+        meter_cut=smart_meter.phases_cut if smart_meter is not None else None,
     )
     bot.start(inverter_interval=120)
     logging.info("Telegram bot started with %d allowed users (public=%s)", len(user_ids), is_public)

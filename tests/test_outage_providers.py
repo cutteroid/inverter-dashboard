@@ -135,6 +135,46 @@ class TestOutageSchedulePollerStatus:
         assert status["end_time"].hour == 0
         assert status["end_time"].day == now.day + 1
 
+    def _status_at(self, now, days):
+        poller = self._make_poller(days[now.date()], last_updated=now)
+        poller._days = days
+        with patch("outage_providers.base.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.combine = datetime.combine
+            mock_dt.min = datetime.min
+            return poller.get_outage_status()
+
+    def test_outage_continuing_after_midnight_ends_tomorrow(self):
+        """22:00-24:00 today and 00:00-04:00 tomorrow: back at 04:00, not at midnight."""
+        now = datetime.now().replace(hour=23, minute=12, second=0, microsecond=0)
+        tomorrow = now.date() + timedelta(days=1)
+        status = self._status_at(now, {now.date(): [(22, 0, 24, 0)], tomorrow: [(0, 0, 4, 0), (10, 0, 12, 0)]})
+        assert status["status"] == "active"
+        assert status["start_time"] == now.replace(hour=22, minute=0)
+        assert status["end_time"] == datetime.combine(tomorrow, datetime.min.time()).replace(hour=4)
+        assert status["remaining_minutes"] == 4 * 60 + 48
+        assert len(status["days"][0]["windows"]) == 1        # the days themselves aren't merged
+
+    def test_upcoming_outage_continuing_after_midnight(self):
+        now = datetime.now().replace(hour=20, minute=0, second=0, microsecond=0)
+        tomorrow = now.date() + timedelta(days=1)
+        status = self._status_at(now, {now.date(): [(23, 0, 24, 0)], tomorrow: [(0, 0, 2, 0), (8, 0, 9, 0)]})
+        assert status["status"] == "upcoming"
+        assert status["upcoming_windows"] == [(now.replace(hour=23), datetime.combine(tomorrow, datetime.min.time()).replace(hour=2))]
+
+    def test_a_gap_at_midnight_is_two_outages(self):
+        now = datetime.now().replace(hour=23, minute=12, second=0, microsecond=0)
+        tomorrow = now.date() + timedelta(days=1)
+        status = self._status_at(now, {now.date(): [(22, 0, 24, 0)], tomorrow: [(0, 30, 4, 0)]})
+        assert status["end_time"] == datetime.combine(tomorrow, datetime.min.time())
+
+    def test_after_midnight_the_outage_started_yesterday(self):
+        now = datetime.now().replace(hour=1, minute=0, second=0, microsecond=0)
+        yesterday = now.date() - timedelta(days=1)
+        status = self._status_at(now, {yesterday: [(22, 0, 24, 0)], now.date(): [(0, 0, 4, 0)]})
+        assert status["start_time"] == datetime.combine(yesterday, datetime.min.time()).replace(hour=22)
+        assert status["end_time"] == now.replace(hour=4)
+
     def test_electricity_start_tracks_last_ended_window(self):
         """electricity_start should be the end of the last past window."""
         # Fixed time: 12:00. Past window 8:00-11:00, future window 14:00-15:00

@@ -162,7 +162,8 @@ LONG_POLL_SECONDS = 25
 class TelegramBot:
     def __init__(self, token, allowed_users, inverter,
                  outage_poller=None, state_file=None, grid_daily_log_file=None,
-                 weather_poller=None, is_public=False, inverter_poller=None, readiness=None):
+                 weather_poller=None, is_public=False, inverter_poller=None, readiness=None,
+                 meter_cut=None):
         self.token = token
         self.allowed_users = set(allowed_users)
         self.is_public = is_public
@@ -171,6 +172,9 @@ class TelegramBot:
         # () -> the dashboard's outage readiness (app.current_outage_readiness):
         # the outage message's verdict, so it matches the dashboard's card
         self.readiness = readiness
+        # () -> phases the smart meter cut while the grid is there (SmartMeter.phases_cut),
+        # None without a meter: tells the meter's protection from an outage
+        self.meter_cut = meter_cut
         self.outage_poller = outage_poller
         self.grid_daily_log_file = grid_daily_log_file
         self.weather_poller = weather_poller
@@ -673,7 +677,18 @@ class TelegramBot:
         # Get schedule info
         provider_name = self._get_provider_name()
         schedule_info = ""
-        if self.outage_poller:
+        try:
+            cut = self.meter_cut() if self.meter_cut else None
+        except Exception:
+            logger.exception("Smart meter state unavailable for the grid-down message")
+            cut = None
+        if cut:
+            phases = ", ".join(f"L{n}" for n in cut)
+            schedule_info = (
+                f"Та мережа є — то лічильник вимкнув {'фазу' if len(cut) == 1 else 'фази'} "
+                f"<b>{phases}</b> своїм захистом: напруга, певно, поза нормою."
+            )
+        elif self.outage_poller:
             status = self.outage_poller.get_outage_status()
             if status["status"] == "active":
                 end_time = status["end_time"].strftime("%H:%M")

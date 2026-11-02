@@ -112,7 +112,12 @@
     "phase_down": "НЕТ ФАЗЫ {phases}",
     "phases_down": "НЕТ ФАЗ {phases}",
     "out_of_range_label": "Сеть вне нормы",
-    "on_battery": "НА БАТАРЕЕ"
+    "on_battery": "НА БАТАРЕЕ",
+    "cut_by_meter": "ОТКЛЮЧЕНО СЧЁТЧИКОМ",
+    "cut_by_meter_label": "Сеть есть · защита счётчика",
+    "phase_cut": "ФАЗА {phases} ОТКЛЮЧЕНА",
+    "phases_cut": "ФАЗЫ {phases} ОТКЛЮЧЕНЫ",
+    "partial_cut_label": "Отключено счётчиком"
   },
   "outage_info": {
     "scheduled_now": "Плановое отключение · закончится через {time}",

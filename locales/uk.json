@@ -112,7 +112,12 @@
     "phase_down": "НЕМАЄ ФАЗИ {phases}",
     "phases_down": "НЕМАЄ ФАЗ {phases}",
     "out_of_range_label": "Мережа поза нормою",
-    "on_battery": "НА БАТАРЕЇ"
+    "on_battery": "НА БАТАРЕЇ",
+    "cut_by_meter": "ВИМКНЕНО ЛІЧИЛЬНИКОМ",
+    "cut_by_meter_label": "Мережа є · захист лічильника",
+    "phase_cut": "ФАЗУ {phases} ВИМКНЕНО",
+    "phases_cut": "ФАЗИ {phases} ВИМКНЕНО",
+    "partial_cut_label": "Вимкнено лічильником"
   },
   "outage_info": {
     "scheduled_now": "Планове відключення · закінчиться через {time}",

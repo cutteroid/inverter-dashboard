@@ -321,6 +321,25 @@ class SmartMeter:
             self._silent_outage = True
         self.outages.update(TOTAL, at=start)
 
+    def phases_cut(self):
+        """Phases the meter's relay has switched off while the grid has voltage on
+        them (the house is off, the grid isn't): [] none, None unknown (readings
+        not current, or relays not per phase). For the grid banner and the bot."""
+        status = self.get_status()
+        if status["status"] != "ok":
+            return None
+        volts = status["voltage"]
+        if not volts or any(v is None for v in volts):
+            return None
+        if len(volts) == 1:   # single-phase: its one relay (as in _check_grid)
+            connected = [status["relays"][0] > 0] if status["relays"] else None
+        else:
+            connected = status["phases_connected"]
+        if connected is None:
+            return None
+        return [i + 1 for i, (v, on) in enumerate(zip(volts, connected))
+                if not on and v >= PHASE_ON_MIN_VOLTAGE]
+
     def record_history(self):
         """Add the power now to the sparkline history, while the readings are
         current. Runs every few seconds (SmartMeterClient, DemoMeterFeed), so the

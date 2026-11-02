@@ -86,6 +86,20 @@ def window_datetimes(day, window):
     return start_dt, end_dt
 
 
+def merged_windows(days):
+    """All windows of {date: windows} as (start_dt, end_dt), oldest first, with
+    back-to-back or overlapping ones joined: today's 22:00-24:00 and tomorrow's
+    00:00-04:00 are one outage until 04:00."""
+    windows = sorted(window_datetimes(day, w) for day, day_windows in days.items() for w in day_windows)
+    merged = []
+    for start_dt, end_dt in windows:
+        if merged and start_dt <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end_dt))
+        else:
+            merged.append((start_dt, end_dt))
+    return merged
+
+
 class OutageSchedulePoller:
     """Polls an outage provider and stores today's outage schedule."""
 
@@ -144,9 +158,11 @@ class OutageSchedulePoller:
           - status: "active", "upcoming", "clear", "unknown" (not fetched
             yet), or "error" (fetches failing and no current schedule)
           - error: str (if error)
-          - end_time: datetime (if active)
+          - start_time, end_time: datetime (if active; a continuous outage
+            across midnight counts as one, see merged_windows)
           - remaining_minutes: int (if active)
-          - upcoming_windows: list of (start_dt, end_dt) (if upcoming)
+          - upcoming_windows: list of (start_dt, end_dt) starting later today
+            (if upcoming; the end may be tomorrow)
           - days: list of {"date", "windows": [(start_dt, end_dt)]} for today
             and, if published, tomorrow (unless unknown/error)
         """
@@ -174,12 +190,11 @@ class OutageSchedulePoller:
         active_end = None
         upcoming = []
 
-        for window in windows:
-            start_dt, end_dt = window_datetimes(today, window)
+        for start_dt, end_dt in merged_windows({**days, today: windows}):
             if start_dt <= now < end_dt:
                 active_start = start_dt
                 active_end = end_dt
-            elif now < start_dt:
+            elif now < start_dt and start_dt.date() == today:
                 upcoming.append((start_dt, end_dt))
 
         if active_end:

@@ -767,6 +767,20 @@ function renderPowerFlow(data) {
 
 // Grid power actually in use: the server decides from the inverter's grid relay
 // (falls back to voltage for older data)
+// Off the grid because the smart meter cut phases, not because the grid is gone:
+// 'all' (no phase reaches the inverter, the meter cut every one), 'some' (the
+// missing phases are the ones it cut), or null (an outage, or no meter data)
+function meterCutState(data, gridState) {
+    var cut = data.meter_cut;
+    if (!cut || !cut.length) return null;
+    var phases = (inverterConfig && inverterConfig.phases) || (data.grid_voltage_l2 !== undefined ? 3 : 1);
+    if (gridState === 'outage' && cut.length >= phases) return 'all';
+    var missing = data.grid_phases_missing || [];
+    if (gridState === 'partial' && missing.length &&
+        missing.every(function(n) { return cut.indexOf(n) >= 0; })) return 'some';
+    return null;
+}
+
 function gridIsOnline(data) {
     if (typeof data.grid_online === 'boolean') return data.grid_online;
     return (data.grid_voltage || 0) > 100;
@@ -1013,12 +1027,24 @@ function renderDashboard(data) {
     const isOnline = gridIsOnline(data);
 
     // On battery either way, but say why: some phases missing, grid out of
-    // range (all phases there) or no grid at all
+    // range (all phases there) or no grid at all. The inverter sees phases the
+    // smart meter cut as missing too: the meter (meter_cut, phases it switched
+    // off with the grid there) tells its protection from an outage.
     var gridState = isOnline ? 'online' : (data.grid_state || 'outage');
+    var meterCut = meterCutState(data, gridState);
     gridBanner.classList.toggle('online', isOnline);
     gridBanner.classList.toggle('offline', !isOnline);
-    gridBanner.classList.toggle('partial', gridState === 'partial' || gridState === 'out_of_range');
-    if (isOnline) {
+    gridBanner.classList.toggle('partial', gridState === 'partial' || gridState === 'out_of_range' || !!meterCut);
+    gridBanner.classList.toggle('meter-cut', !!meterCut);
+    if (meterCut === 'all') {
+        setI18nText(gridStatusValue, 'grid_banner.cut_by_meter');
+        setI18nText(gridStatusLabel, 'grid_banner.cut_by_meter_label');
+    } else if (meterCut === 'some') {
+        var cutPhases = data.meter_cut.map(function(n) { return 'L' + n; });
+        setI18nText(gridStatusValue, cutPhases.length > 1 ? 'grid_banner.phases_cut' : 'grid_banner.phase_cut',
+            { phases: cutPhases.join(', ') });
+        setI18nText(gridStatusLabel, 'grid_banner.partial_cut_label');
+    } else if (isOnline) {
         setI18nText(gridStatusValue, 'grid_banner.online');
         setI18nText(gridStatusLabel, 'grid_banner.label');
     } else if (gridState === 'partial') {
@@ -1457,7 +1483,23 @@ function plannedDay(d, offset) {
     return ((d && d.days) || []).filter(function(day) { return day.date === key; })[0] || null;
 }
 
-function renderPlannedDay(label, day, now) {
+// The end of the outage a window ending at `end` belongs to: windows back to
+// back across midnight (22:00-24:00, then 00:00-04:00 tomorrow) are one outage
+function continuousOutageEnd(d, end) {
+    var windows = [];
+    ((d && d.days) || []).forEach(function(day) {
+        (day.windows || []).forEach(function(w) { windows.push({ start: new Date(w.start), end: new Date(w.end) }); });
+    });
+    for (var extended = true; extended;) {
+        extended = false;
+        windows.forEach(function(w) {
+            if (w.start <= end && w.end > end) { end = w.end; extended = true; }
+        });
+    }
+    return end;
+}
+
+function renderPlannedDay(label, day, now, d) {
     var dateObj = new Date(day.date + 'T00:00:00');
     var dateText = dateObj.toLocaleDateString(i18nLocale(), { weekday: 'short', day: 'numeric', month: 'short' });
     var isToday = dateObj.toDateString() === now.toDateString();
@@ -1494,7 +1536,7 @@ function renderPlannedDay(label, day, now) {
         html += '<ul class="planned-windows">';
         windows.forEach(function(w) {
             var tag = '';
-            if (w.state === 'active') tag = t('planned.now_ends_in', { time: formatCountdown(Math.max(0, w.endDate - now)) });
+            if (w.state === 'active') tag = t('planned.now_ends_in', { time: formatCountdown(Math.max(0, continuousOutageEnd(d, w.endDate) - now)) });
             else if (w.state === 'past') tag = t('planned.done');
             else if (isToday) tag = t('planned.starts_in', { time: formatCountdown(Math.max(0, w.startDate - now)) });
             html += '<li class="planned-window ' + w.state + '">' +
@@ -1536,10 +1578,10 @@ function renderPlannedOutages() {
         // older schedule's first day is yesterday, and its second today
         var now = new Date();
         var today = plannedDay(d, 0), tomorrow = plannedDay(d, 1);
-        html = today ? renderPlannedDay(t('planned.today'), today, now)
+        html = today ? renderPlannedDay(t('planned.today'), today, now, d)
                      : '<div class="planned-none">' + t('planned.loading') + '</div>';
         if (tomorrow) {
-            html += renderPlannedDay(t('planned.tomorrow'), tomorrow, now);
+            html += renderPlannedDay(t('planned.tomorrow'), tomorrow, now, d);
         } else {
             html += '<div class="planned-day"><div class="planned-day-header"><span class="planned-day-name">' + t('planned.tomorrow') + '</span></div>' +
                 '<div class="planned-none">' + t('planned.not_published') + '</div></div>';
@@ -1568,8 +1610,10 @@ function updateOutageInfo() {
     el.title = d.status === 'error' ? (d.error || '') : '';
     var now = new Date();
     var gridBanner = document.getElementById('grid-banner');
-    var gridOnline = gridBanner.classList.contains('online');
-    var gridOffline = gridBanner.classList.contains('offline');
+    // Cut by the smart meter: the grid is there, so the schedule reads as with the grid on
+    var meterCut = gridBanner.classList.contains('meter-cut');
+    var gridOnline = gridBanner.classList.contains('online') || meterCut;
+    var gridOffline = gridBanner.classList.contains('offline') && !meterCut;
 
     if (!gridOnline && !gridOffline) {
         // Grid state unknown (no inverter data yet): report the schedule
@@ -1644,8 +1688,9 @@ function updateGridProgressBar() {
     var fill = document.getElementById('grid-banner-bar-fill');
     var d = outageScheduleData;
     var gridBanner = document.getElementById('grid-banner');
-    var gridOffline = gridBanner && gridBanner.classList.contains('offline');
-    var gridUnknown = gridBanner && !gridOffline && !gridBanner.classList.contains('online');
+    var meterCut = gridBanner && gridBanner.classList.contains('meter-cut');
+    var gridOffline = gridBanner && gridBanner.classList.contains('offline') && !meterCut;
+    var gridUnknown = gridBanner && !gridOffline && !meterCut && !gridBanner.classList.contains('online');
 
     if (!d || (d.status !== 'active' && d.status !== 'upcoming')) {
         bar.style.display = 'none';

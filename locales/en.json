@@ -112,7 +112,12 @@
     "phase_down": "{phases} DOWN",
     "phases_down": "{phases} DOWN",
     "out_of_range_label": "Grid out of range",
-    "on_battery": "ON BATTERY"
+    "on_battery": "ON BATTERY",
+    "cut_by_meter": "CUT BY METER",
+    "cut_by_meter_label": "Grid present · meter protection",
+    "phase_cut": "{phases} CUT",
+    "phases_cut": "{phases} CUT",
+    "partial_cut_label": "Cut by meter"
   },
   "outage_info": {
     "scheduled_now": "Scheduled outage · ends in {time}",

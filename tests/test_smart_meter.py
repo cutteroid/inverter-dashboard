@@ -90,6 +90,27 @@ def test_phase_cut_by_meter_relay(meter):
     assert status["phases_on"] == [True, True, True]   # voltage alone wouldn't show it
 
 
+def test_phases_cut_with_the_grid_there(meter):
+    """All relays off, voltage on every phase: the grid is there, the meter cut it."""
+    assert meter.phases_cut() is None                         # no readings yet
+    meter.handle_message("buckler/1/dataJson", json.dumps({**THREE_PHASE_JSON, "relay": [0, 0, 0]}))
+    assert meter.phases_cut() == [1, 2, 3]
+    meter.handle_message("buckler/1/relay/r1", "100")
+    meter.handle_message("buckler/1/relay/r2", "100")
+    meter.handle_message("buckler/1/data/V3", "0.2")          # L3: no grid there, not a cut
+    assert meter.phases_cut() == []
+    meter.handle_message("buckler/1/data/V3", "160")
+    assert meter.phases_cut() == [3]
+
+
+def test_phases_cut_single_phase_and_unknown(meter, tmp_path):
+    meter.handle_message("buckler/1/dataJson", json.dumps({**SINGLE_PHASE_JSON, "relay": 0}))
+    assert meter.phases_cut() == [1]
+    six = SmartMeter(daily_file=str(tmp_path / "six.json"))
+    six.handle_message("buckler/2/dataJson", json.dumps(THREE_PHASE_JSON))   # 6 relays: not per phase
+    assert six.phases_cut() is None
+
+
 def test_relays_not_per_phase(meter):
     meter.handle_message("buckler/64/dataJson", json.dumps(THREE_PHASE_JSON))  # 6 relays
     assert meter.get_status()["phases_connected"] is None

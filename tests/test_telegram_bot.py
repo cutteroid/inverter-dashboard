@@ -196,3 +196,16 @@ def test_long_polling_over_one_session(bot):
     assert params["timeout"] == telegram_bot.LONG_POLL_SECONDS
     assert get.call_args.kwargs["timeout"] > telegram_bot.LONG_POLL_SECONDS   # the HTTP timeout outlasts the wait
     assert get.call_count == 2 and isinstance(bot.http, telegram_bot.requests.Session)
+
+
+class TestGridDownMessage:
+    def test_says_the_meter_cut_the_phases(self, bot):
+        bot.meter_cut = lambda: [1, 2, 3]
+        bot._broadcast_grid_down(80)
+        text = bot.broadcast.call_args[0][0]
+        assert "лічильник вимкнув фази <b>L1, L2, L3</b>" in text
+
+    def test_outage_without_a_cut_keeps_the_schedule_text(self, bot):
+        bot.meter_cut = lambda: []
+        bot._broadcast_grid_down(80)
+        assert "Графік відключень недоступний" in bot.broadcast.call_args[0][0]

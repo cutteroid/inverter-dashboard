@@ -64,6 +64,18 @@ class TestGetData:
         assert data["config"]["phases"] == 3
 
 
+    def test_meter_cut_only_with_a_meter(self, client, monkeypatch):
+        c, mock_inv, app_module = client
+        type(mock_inv).data = PropertyMock(return_value={"grid_online": False, "grid_state": "outage"})
+        app_module.outage_poller = None
+        monkeypatch.setattr(app_module, "smart_meter", None)
+        assert "meter_cut" not in c.get("/api/data").get_json()
+        meter = MagicMock()
+        meter.phases_cut.return_value = [1, 2, 3]
+        monkeypatch.setattr(app_module, "smart_meter", meter)
+        assert c.get("/api/data").get_json()["meter_cut"] == [1, 2, 3]
+
+
 class TestGetPhaseStats:
     def test_empty_stats_returns_empty_list(self, client):
         c, _, app_module = client
