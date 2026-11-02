@@ -2213,8 +2213,10 @@ body.fullscreen-mode.alerts-enabled:not(.has-generator):not(.outages-disabled) .
 }
 
 
-/* Offline / stale / broker down: the values shown are the last known ones */
+/* Offline / stale / broker down: the values shown are the last known ones
+   (the 24-hour chart too; the larger chart it opens is a separate dialog) */
 #smart-meter-card.meter-not-live .metric,
+#smart-meter-card.meter-not-live .sparkline,
 #smart-meter-card.meter-not-live .stats-row,
 #smart-meter-card.meter-not-live .meter-phases {
     opacity: 0.45;
