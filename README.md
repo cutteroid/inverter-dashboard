@@ -18,13 +18,15 @@ What this project adds to the original [ivanursul/deye-dashboard](https://github
 
 **New cards and features**
 - **Air raid alerts map:** Ukraine with oblasts and raions, live from [alerts.in.ua](https://alerts.in.ua/) (with a free API token) or [NEPTUN](https://neptun.in.ua/) (no key needed), refreshed every 30 s, on a card and on the fullscreen first page. You can show the whole country or zoom to one region, with neighbouring regions dimmed around it (Settings → step 4).
-- **Planned outages:** today's and tomorrow's outage windows on a timeline, plus a countdown in the grid banner. Adds a DTEK provider (Kyiv oblast, Kyiv, Dnipro, Odesa). A failed schedule fetch is no longer reported as "No outages today".
-- **Bakler smart meter** (optional): live power, voltage and current per phase over MQTT, with a Mosquitto broker in `docker-compose.yml`. Phases cut by the meter or without supply are highlighted. The relay state is shown read-only. A demo mode is included.
+- **Planned outages:** today's and tomorrow's outage windows on a timeline, plus a countdown in the grid banner. An outage that continues past midnight (e.g. 22:00–24:00 and 00:00–04:00) counts as one, so the banner says when the power is really back. Adds a DTEK provider (Kyiv oblast, Kyiv, Dnipro, Odesa). A failed schedule fetch is no longer reported as "No outages today".
+- **Bakler smart meter** (optional): live power, voltage and current per phase over MQTT, with a Mosquitto broker in `docker-compose.yml`, and a 24-hour power chart. Phases cut by the meter or without supply are highlighted. The relay state is shown read-only. A demo mode is included.
+- **Outage history** (with the smart meter): the grid outages the meter saw today and yesterday, total or partial, with start, end and duration.
 - **Battery estimates:**
   - "Lasts about …" during an outage, counting down to the inverter's shutdown level;
   - "Full in …" while charging;
   - both based on a ~10-minute average power, with an optional `BATTERY_CAPACITY_KWH`.
-- **Grid status that matches reality:** taken from the inverter's grid relay. A partial outage (e.g. "L2 DOWN" / "НЕМАЄ ФАЗИ L2") and "grid out of range" are shown separately from a total outage. Grid voltage is shown per phase.
+- **Grid status that matches reality:** taken from the inverter's grid relay. A partial outage (e.g. "L2 DOWN" / "НЕМАЄ ФАЗИ L2") and "grid out of range" are shown separately from a total outage. With the smart meter, phases its protection switched off while the grid is there show as "CUT BY METER" / "L3 CUT" instead of an outage. Grid voltage is shown per phase.
+- **24-hour charts** on the solar, battery, consumption and smart meter cards. Tap one for a larger chart with the value at any time, the peak and the day's total.
 - **Weather:** tomorrow's forecast in the fullscreen weather banner.
 - **Phase balance card** (was "Daily Phase Analytics"): today's kWh per phase plus one bar per day for the last 7 days. Tap a day for details.
 - **Consumption card:** home consumption and load per phase merged into one card.
@@ -61,7 +63,7 @@ What this project adds to the original [ivanursul/deye-dashboard](https://github
   - crash-safe data files;
   - validated settings;
   - background services that only start in `main()`;
-  - a test suite of over 400 tests.
+  - a test suite of over 500 tests.
 
 
 ## How It Works (for non-technical users)
@@ -129,7 +131,7 @@ You don't need to be a programmer, but you should be comfortable with basic comp
                               Ваш телефон / планшет / ПК (відкриває панель у браузері)
 ```
 
-Raspberry Pi зчитує дані з вашого інвертора кожні 60 секунд через локальну мережу. Потім він відображає ці дані на веб-сторінці, яку можна відкрити з будь-якого пристрою у вашому домі — телефону, планшета чи комп'ютера — перейшовши за адресою Raspberry Pi у браузері (наприклад, `http://192.168.1.50:8080`).
+Raspberry Pi зчитує дані з вашого інвертора кожні 30 секунд через локальну мережу. Потім він відображає ці дані на веб-сторінці, яку можна відкрити з будь-якого пристрою у вашому домі — телефону, планшета чи комп'ютера — перейшовши за адресою Raspberry Pi у браузері (наприклад, `http://192.168.1.50:8080`).
 
 ### Огляд налаштування
 
@@ -144,14 +146,14 @@ Raspberry Pi зчитує дані з вашого інвертора кожні
 
 ## Features
 
-- **Real-time monitoring** — solar production, battery SOC, grid power, and load consumption
+- **Real-time monitoring** — solar production, battery SOC, grid power, and load consumption, with 24-hour charts
 - **Load analytics** — per-phase power distribution with daily statistics (3-phase systems)
 - **Weather** — current conditions and forecast via Open-Meteo API
-- **Planned outages** — today's and tomorrow's outage windows on a timeline, plus a countdown in the grid banner (Lvivoblenergo, Yasno, or DTEK providers)
+- **Planned outages** — today's and tomorrow's outage windows on a timeline, plus a countdown in the grid banner that follows an outage past midnight (Lvivoblenergo, Yasno, or DTEK providers)
 - **Outage readiness** — whether the battery will last through the next planned outage, at the last 30 minutes' average load
 - **Inverter & battery health** — inverter state and temperatures, fault / warning codes, lifetime battery charge and discharge with equivalent full cycles (3-phase hybrids)
 - **Air raid alerts** — map of Ukraine's regions and districts with live alert statuses (alerts.in.ua or NEPTUN)
-- **Smart meter** — power, voltage, current and energy from a Bakler Wi-Fi electricity meter over MQTT (optional)
+- **Smart meter** — power (with a 24-hour chart), voltage, current and energy from a Bakler Wi-Fi electricity meter over MQTT, an outage history of what it saw, and "CUT BY METER" on the grid banner when its protection switches the house off (optional)
 - **Grid outage detection** — browser notifications when power goes out
 - **Telegram bot** — battery reports, inverter status, and Ukrainian weather poems
 - **Fullscreen mode** — kiosk-friendly display with weather, grid, and battery banners
@@ -159,7 +161,7 @@ Raspberry Pi зчитує дані з вашого інвертора кожні
 
 ## Requirements
 
-- Python 3.7+
+- Python 3.10+ (the Docker image uses 3.11)
 - Deye inverter with Solarman Wi-Fi logger
 - Network access to the inverter
 
@@ -275,6 +277,7 @@ The container mounts a `data` volume at `/app/data`. Everything the dashboard st
 - Configuration (`.env`)
 - Phase statistics (`phase_stats.json`)
 - Grid import log, generator log, last inverter readings, detected inverter model (`grid_daily_log.json`, `generator_log.json`, `inverter_cache.json`, `inverter_config.json`)
+- The last 24 hours for the cards' charts (`power_history.json`)
 - Telegram bot state and battery reports (`bot_state.json`, `battery_reports/`)
 - Smart meter daily counter (`smart_meter_daily.json`), its outage log (`meter_outages.json`) and Mosquitto broker files (`mosquitto/`)
 
@@ -329,7 +332,7 @@ Coordinates are used to fetch weather data from the [Open-Meteo API](https://ope
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OUTAGE_PROVIDER` | Provider name: `lvivoblenergo`, `yasno`, `dtek`, or `none` | `none` |
+| `OUTAGE_PROVIDER` | Provider name: `lvivoblenergo`, `yasno`, `dtek`, or `none` | `lvivoblenergo` |
 | `OUTAGE_GROUP` | Your outage queue/group number (e.g. `1.1`, `2.2`) | — |
 
 **Yasno-specific settings** (only when `OUTAGE_PROVIDER=yasno`):
@@ -386,9 +389,17 @@ All three are also in Settings → Edit configuration, step 4 ("Air raid alerts"
 
 ### Smart Meter (optional)
 
-The **Smart meter** card shows live readings from a [Bakler](https://www.bakler.com.ua/) Wi-Fi electricity meter: current power, voltage and current (a per-phase table for three-phase meters, where a phase below 100 V is shown as "No voltage"), mains frequency and the relay state. When the meter or the broker is unavailable, a badge says so (Waiting for data / Meter offline / No recent data / MQTT broker unavailable) and the last known readings are dimmed. The relay is shown only; the dashboard never switches it.
+The **Smart meter** card shows live readings from a [Bakler](https://www.bakler.com.ua/) Wi-Fi electricity meter: current power with a 24-hour chart, voltage and current (a per-phase table for three-phase meters, where a phase below 100 V is shown as "No voltage"), mains frequency and the relay state. When the meter or the broker is unavailable, a badge says so (Waiting for data / Meter offline / No recent data / MQTT broker unavailable) and the last known readings are dimmed. The relay is shown only; the dashboard never switches it.
 
-With the meter, an **Outage history** card lists the grid outages it saw today and yesterday, newest first, with start, end and duration (a running one counts on). **No grid**: every phase without voltage, or the meter went offline (it's powered by the grid) for 90 s while the inverter doesn't see the grid either; if the inverter still has the grid, the meter only lost its Wi-Fi and nothing is logged. **Partial**: some phases missing, each marked as *no voltage from the grid* or *disconnected by the meter* (its relay, e.g. the overvoltage protection; three-phase meters with one relay per phase). The meter's wait before it switches the house back on after an outage (its switch-on delay, a setting in the meter's app) counts as part of that outage; a longer hold is its protection and an entry of its own. The meter doesn't report that setting, so if yours isn't the default 120 s, set `SMART_METER_SWITCH_ON_DELAY` (seconds) in `data/.env`. The card shows the latest five, with today's count and time without power; the rest of today and yesterday is one tap away. Outages under 10 s aren't kept; older days are dropped. Kept in `data/meter_outages.json`.
+With the meter, an **Outage history** card lists the grid outages it saw today and yesterday, newest first, with start, end and duration (a running one counts on):
+
+- **No grid:** every phase without voltage, or the meter (it's powered by the grid) sent nothing for 90 s while the inverter doesn't see the grid either. Such an outage starts at the meter's last message and ends when the inverter sees the grid again, even if the meter is still reconnecting. If the inverter still has the grid, the meter only lost its Wi-Fi and nothing is logged.
+- **Partial:** some phases missing, each marked as *no voltage from the grid* or *disconnected by the meter* (its relay, e.g. the over- or undervoltage protection; three-phase meters with one relay per phase).
+- **The meter's switch-on wait:** after an outage the meter keeps the house off for its switch-on delay (a setting in the meter's app). That wait counts as part of the outage; a longer hold is its protection and an entry of its own. The meter doesn't report that setting, so if yours isn't the default 120 s, set `SMART_METER_SWITCH_ON_DELAY` (seconds) in `data/.env`.
+
+The card shows the latest five, with today's count and time without power; the rest of today and yesterday is one tap away. Outages under 10 s aren't kept; older days are dropped. Kept in `data/meter_outages.json`.
+
+The inverter sits after the meter, so it sees a phase the meter switched off as missing. With current meter readings, the **grid banner** tells the two apart: **CUT BY METER** ("Grid present · meter protection") when the meter cut every phase while the grid has voltage, **L3 CUT** ("Cut by meter") for one phase, instead of OUTAGE / "L3 DOWN". The line under the banner then follows the schedule as with the grid on, and the Telegram outage message says the meter switched the phases off.
 
 The meter talks MQTT: it connects to a broker and publishes its readings there ([MQTT docs, in Ukrainian](https://www.bakler.com.ua/setting-mqtt-client/)). `docker compose` starts a Mosquitto broker (`inverter-mosquitto`, port 1883) next to the dashboard.
 
@@ -413,8 +424,10 @@ Without `SMART_METER_MQTT_USER` / `SMART_METER_MQTT_PASSWORD` the broker accepts
 | `SMART_METER_MQTT_PORT` | Broker port | `1883` |
 | `SMART_METER_SERIAL` | Meter serial (topic `buckler/<serial>/…`) when several meters share the broker; otherwise the first one seen is used | — |
 | `SMART_METER_INTERVAL` | Update interval requested from the meter, 1–60 s (`0` = leave the meter's setting) | `10` |
+| `SMART_METER_SWITCH_ON_DELAY` | The meter's switch-on delay in seconds (set in the meter's app), for joining its wait to the outage before it | `120` |
 | `SMART_METER_DAILY_FILE` | Where today's starting counter is kept | `data/smart_meter_daily.json` |
-| `SMART_METER_DEMO` | `1` / `3`: show simulated single-/three-phase readings (marked "Demo data") instead of a real meter; no broker needed. The three-phase demo drops L3 for the first minute of every 5 minutes | — |
+| `SMART_METER_OUTAGES_FILE` | Where the outage history is kept | `data/meter_outages.json` |
+| `SMART_METER_DEMO` | `1` / `3`: show simulated single-/three-phase readings (marked "Demo data") instead of a real meter; no broker needed. The three-phase demo drops L3 for the first minute of every 5 minutes. Its chart values are dropped when you switch to a real meter | — |
 
 ### Language
 
@@ -512,17 +525,17 @@ You need a `.env` file with at least `INVERTER_IP` and `LOGGER_SERIAL` set. Eith
 
 ## Deploying to a Remote Server
 
-`deploy.sh` deploys the dashboard to a remote Linux server over SSH and sets it up as a systemd service. The remote server needs Python 3.7+, SSH access, and `sudo` for systemd management.
+`deploy.sh` deploys the dashboard to a remote Linux server over SSH and sets it up as a systemd service. The remote server needs Python 3.10+, SSH access, and `sudo` for systemd management.
 
 ### Prerequisites
 
 - SSH key-based access to the remote server (the script runs `ssh` and `rsync` non-interactively)
 - `sudo` privileges on the remote server (for systemd service setup)
-- Python 3.7+ installed on the remote server
+- Python 3.10+ installed on the remote server
 
 ### First-time deploy
 
-If no `.env` file exists, the script runs an interactive setup wizard:
+If no `.env` file exists, the script runs an interactive setup wizard (`setup.py`):
 
 ```bash
 chmod +x deploy.sh
@@ -531,11 +544,12 @@ chmod +x deploy.sh
 
 The wizard prompts for all settings in order:
 
-1. **Inverter** — IP address and logger serial number
-2. **Deployment** — remote host, SSH user, install directory, service name
-3. **Weather** — latitude and longitude for forecast (defaults to Kyiv)
-4. **Outage schedule** — provider selection (Lvivoblenergo, Yasno, or none) with provider-specific follow-up questions
+1. **Inverter** — IP address (it scans the local network for loggers first), logger serial number and phase count (empty: auto-detect)
+2. **Weather** — latitude and longitude for forecast (defaults to Kyiv)
+3. **Outage schedule** — provider selection (Lvivoblenergo, Yasno, DTEK, or none) with provider-specific follow-up questions
+4. **Generator** — whether one is connected to the GEN/GRID2 port
 5. **Telegram** — enable/disable, bot token, and allowed user IDs
+6. **Deployment** — remote host, SSH user, install directory, service name
 
 After answering all prompts, the script:
 - Writes the `.env` file
@@ -556,7 +570,7 @@ To change settings, edit `.env` directly and re-deploy.
 
 ### What the deploy script does
 
-1. **Rsync** — copies `app.py`, `inverters/`, `telegram_bot.py`, `poems.py`, `outage_providers/`, `requirements.txt`, `templates/`, and `.env` to the remote server
+1. **Rsync** — copies the app (`app.py` and its modules, `inverters/`, `outage_providers/`, `templates/`, `static/`, `locales/`, `requirements.txt`, …) and `.env` to the remote server
 2. **Python setup** — creates a virtual environment (if needed) and installs dependencies from `requirements.txt`
 3. **Systemd service** — creates a service file at `/etc/systemd/system/<service-name>.service`, enables it, and restarts it
 4. The dashboard runs on port 8080 by default
@@ -643,6 +657,12 @@ On ASUS routers the IoT network ("Guest Network Pro") has only an all-or-nothing
 # Test inverter connection
 python test_connection.py
 
+# Quick check that a logger answers: python check_inverter.py <IP> <LOGGER_SERIAL>
+python check_inverter.py 192.168.1.100 1234567890
+
+# Find Solarman loggers on the local network
+python discover_inverter.py
+
 # Scan for battery voltage register
 python scan_battery.py
 
@@ -657,11 +677,17 @@ python scan_registers.py
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/data` | GET | Current inverter readings |
+| `/api/data` | GET | Current inverter readings (with a smart meter, also `meter_cut`: the phases it switched off while the grid is there) |
+| `/api/history` | GET | The last 24 hours of battery charge, solar, load and smart meter power in 5-minute averages, for the cards' charts |
 | `/api/weather` | GET | Current weather and forecast |
-| `/api/outage_schedule` | GET | Current outage status, plus today's and (if published) tomorrow's planned windows |
+| `/api/outage_schedule` | GET | Current outage status (an outage continuing past midnight counts as one), plus today's and (if published) tomorrow's planned windows |
+| `/api/outage-readiness` | GET | Whether the battery will last through the next planned outage |
 | `/api/phase-stats` | GET | Daily phase statistics |
-| `/api/phase-stats/clear` | POST | Clear phase statistics |
+| `/api/phase-stats/clear` | POST | Clear phase statistics (settings PIN) |
+| `/api/generator` | GET | Generator status and runtime |
+| `/api/alerts` | GET | Air raid alert statuses by region and district |
+| `/api/smart-meter` | GET | Smart meter readings (`status: disabled` without one) |
+| `/api/meter-outages` | GET | Grid outages the smart meter saw today and yesterday, newest first |
 
 ## Support
 
