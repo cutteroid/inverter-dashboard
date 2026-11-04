@@ -545,7 +545,8 @@ class TelegramBot:
                 msg = self._pick_message(
                     verdict_messages[readiness["verdict"]],
                     start_time=start_time, end_time=end_time,
-                    soc=readiness.get("soc", 0), load=readiness.get("average_load_w", 0),
+                    soc=readiness.get("soc", 0),
+                    load=readiness.get("draw_w", readiness.get("average_load_w", 0)),
                     provider_name=self._get_provider_name(),
                 )
             else:

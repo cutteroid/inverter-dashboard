@@ -276,9 +276,11 @@ class TestBatteryRuntime:
             result = {**self.DATA, "battery_power": power}
             poller._add_runtime_estimate(result)
         assert result["battery_runtime_minutes"] == app.estimate_battery_runtime(self.DATA, 400)
+        assert result["battery_discharge_average_w"] == 400          # for the outage readiness
         result = {**self.DATA, "battery_power": 1500}  # charging: average restarts with charge power
         poller._add_runtime_estimate(result)
         assert result["battery_runtime_minutes"] is None and poller._flow_samples == [1500]
+        assert result["battery_discharge_average_w"] is None
         result = {**self.DATA, "battery_power": 0}     # idle: no estimates, nothing averaged
         poller._add_runtime_estimate(result)
         assert result["battery_charge_minutes"] is None and poller._flow_samples == []

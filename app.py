@@ -323,6 +323,8 @@ class InverterPoller:
         self._flow_direction = direction
         average = sum(self._flow_samples) / len(self._flow_samples) if self._flow_samples else 0
         result["battery_runtime_minutes"] = estimate_battery_runtime(result, average) if direction < 0 else None
+        # The same average discharge power, for the outage readiness while on battery
+        result["battery_discharge_average_w"] = round(average) if direction < 0 else None
         result["battery_charge_minutes"] = estimate_battery_charge_time(result, average) if direction > 0 else None
 
     def _add_load_average(self, result):

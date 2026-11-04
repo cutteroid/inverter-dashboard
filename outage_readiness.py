@@ -4,6 +4,12 @@ Compares the energy the home needs for the next outage window (the recent
 average load times the window's length) with what the battery can give before
 it reaches the inverter's shutdown SOC. While the battery is charging before
 the outage, the charge it will have at the start is estimated too.
+
+While the house is on battery already (no grid, e.g. an unscheduled outage
+before the planned one), the battery's own measured draw is used instead of the
+load estimate (the same ~10-minute average as the battery banner's "lasts
+about", the inverter's losses included), and the charge at the outage's start
+is what's left after drawing that until then.
 """
 
 # Energy taken from the battery per Wh of home load: the inverter's conversion
@@ -35,7 +41,7 @@ def outage_readiness(data, days, now, average_load_w, capacity_wh):
     """Readiness for the next outage window.
 
     data: inverter readings (battery_soc, battery_shutdown_soc,
-    battery_charge_minutes); days: the outage schedule's days
+    battery_charge_minutes, grid_online, battery_discharge_average_w); days: the outage schedule's days
     ([{"windows": [(start, end), ...]}], datetimes); average_load_w: recent
     average home load; capacity_wh: full battery capacity.
     """
@@ -62,13 +68,20 @@ def outage_readiness(data, days, now, average_load_w, capacity_wh):
     shutdown = data.get("battery_shutdown_soc") or 0
     if not 0 <= shutdown < 100:
         shutdown = 0
+    discharge_w = data.get("battery_discharge_average_w")
+    on_battery = (data.get("grid_online") is False and isinstance(discharge_w, (int, float))
+                  and discharge_w > 0)
+    draw_w = discharge_w if on_battery else max(average_load_w, 0) * BATTERY_LOSS_FACTOR
     soc_at_start = soc
     charge_minutes = data.get("battery_charge_minutes")
-    if not during and charge_minutes and charge_minutes > 0:
+    if not during and on_battery:
+        # Drawn from the battery until the outage starts
+        drawn_wh = draw_w * result["starts_in_minutes"] / 60
+        soc_at_start = max(0.0, soc - drawn_wh / capacity_wh * 100)
+    elif not during and charge_minutes and charge_minutes > 0:
         # Still charging until the outage: linear, like the "full in" estimate
         soc_at_start = soc + (100 - soc) * min(1.0, result["starts_in_minutes"] / charge_minutes)
 
-    draw_w = max(average_load_w, 0) * BATTERY_LOSS_FACTOR
     available_wh = capacity_wh * max(0, soc_at_start - shutdown) / 100
     needed_wh = draw_w * outage_minutes / 60
     lasts_minutes = available_wh / draw_w * 60 if draw_w > 0 else None
@@ -82,6 +95,10 @@ def outage_readiness(data, days, now, average_load_w, capacity_wh):
     result.update({
         "verdict": verdict,
         "average_load_w": round(average_load_w),
+        # What the estimate draws from the battery: its measured draw ("battery")
+        # or the load plus losses ("load")
+        "basis": "battery" if on_battery else "load",
+        "draw_w": round(draw_w),
         "soc": round(soc),
         "soc_at_start": round(soc_at_start),
         "shutdown_soc": shutdown,

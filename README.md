@@ -441,8 +441,8 @@ The Telegram bot is Ukrainian-only and is not affected by this setting.
 
 The **Outage readiness** card (shown with an outage schedule and a battery) answers whether the battery will last through the next planned outage, today's or tomorrow's (back-to-back windows count as one outage):
 
-- **Needed:** the home's average load over the last 30 minutes × the outage's length, plus 10% for the inverter's own losses.
-- **Available:** the battery's charge down to the inverter's shutdown SOC. If the battery is still charging, the charge it will have when the outage starts.
+- **Needed:** the home's average load over the last 30 minutes × the outage's length, plus 10% for the inverter's own losses. While the house is already on battery (e.g. an unscheduled outage before the planned one), the battery's measured draw over the last ~10 minutes instead, as in the battery banner's "Lasts about".
+- **Available:** the battery's charge down to the inverter's shutdown SOC. If the battery is still charging, the charge it will have when the outage starts; if the house is on battery already, what's left after drawing until then.
 - **Verdict:** "Battery is enough" (at least 20% to spare), "Just enough", or "Short by ~…" (red). During an outage it counts the rest of it.
 
 The load during an outage can differ (a kettle, a heater), so treat it as an estimate.

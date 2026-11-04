@@ -182,7 +182,9 @@
     "needed": "Needed",
     "available": "Available",
     "basis": "Average load ~{power} W · down to {soc}%",
-    "charged_by_start": "Charged to ~{soc}% by the start"
+    "charged_by_start": "Charged to ~{soc}% by the start",
+    "basis_battery": "Battery draw ~{power} W · down to {soc}%",
+    "left_by_start": "~{soc}% left by the start"
   },
   "outage_log": {
     "title": "Outage history",

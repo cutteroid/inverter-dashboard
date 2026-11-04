@@ -1948,10 +1948,16 @@ function renderOutageReadiness() {
         '<div class="stat"><div class="value">' + fmtKwh(d.available_kwh) + kwh + '</div><div class="label">' + escapeHtml(t('readiness.available')) + '</div></div>' +
         '</div>' +
         '<div class="readiness-bar readiness-bar-' + d.verdict + '"><div class="readiness-bar-fill" style="width: ' + share + '%"></div></div>';
-    // One short line each (the average covers the last 30 minutes)
-    html += '<div class="readiness-basis">' + escapeHtml(t('readiness.basis', { power: d.average_load_w, soc: d.shutdown_soc })) + '</div>';
+    // One short line each: the power behind the estimate (on battery: its measured
+    // draw over ~10 minutes, as the battery banner; else the load over 30 minutes)
+    // and, before the outage, the charge expected at its start
+    html += '<div class="readiness-basis">' + escapeHtml(d.basis === 'battery'
+        ? t('readiness.basis_battery', { power: d.draw_w, soc: d.shutdown_soc })
+        : t('readiness.basis', { power: d.average_load_w, soc: d.shutdown_soc })) + '</div>';
     if (!d.during && d.soc_at_start > d.soc) {
         html += '<div class="readiness-basis">' + escapeHtml(t('readiness.charged_by_start', { soc: d.soc_at_start })) + '</div>';
+    } else if (!d.during && d.soc_at_start < d.soc) {
+        html += '<div class="readiness-basis">' + escapeHtml(t('readiness.left_by_start', { soc: d.soc_at_start })) + '</div>';
     }
     body.innerHTML = html;
 }

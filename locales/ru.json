@@ -182,7 +182,9 @@
     "needed": "Нужно",
     "available": "Доступно",
     "basis": "Средняя нагрузка ~{power} Вт · до {soc}%",
-    "charged_by_start": "К началу зарядится до ~{soc}%"
+    "charged_by_start": "К началу зарядится до ~{soc}%",
+    "basis_battery": "Разряд батареи ~{power} Вт · до {soc}%",
+    "left_by_start": "К началу останется ~{soc}%"
   },
   "outage_log": {
     "title": "История отключений",
