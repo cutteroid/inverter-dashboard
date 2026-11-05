@@ -1,4 +1,5 @@
 """Tests for TelegramBot robustness: error isolation, cached data, alerts, retries."""
+import time
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, PropertyMock, patch
 
@@ -153,8 +154,21 @@ class TestOutageForecast:
     """/outage before a planned outage: the battery verdict is the dashboard's
     (outage_readiness), not a guess from a fixed 16 kWh battery."""
 
-    def _upcoming(self, bot):
-        start = datetime.now().replace(second=0, microsecond=0) + timedelta(hours=2)
+    NOW = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+
+    @pytest.fixture(autouse=True)
+    def _noon(self, monkeypatch):
+        """12:00, so an outage in 2 hours is today's whenever the tests run."""
+        now = self.NOW
+
+        class Noon(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return now
+        monkeypatch.setattr(telegram_bot, "datetime", Noon)
+
+    def _upcoming(self, bot, start=None):
+        start = start or self.NOW + timedelta(hours=2)
         bot.outage_poller = MagicMock()
         bot.outage_poller.get_outage_status.return_value = {
             "status": "upcoming", "upcoming_windows": [(start, start + timedelta(hours=3))]}
@@ -178,12 +192,20 @@ class TestOutageForecast:
 
     def test_without_a_verdict_only_the_facts(self, bot):
         self._upcoming(bot)
-        _poller_data(bot, battery_soc=55)
+        _poller_data(bot, battery_soc=55, timestamp=time.time())
         bot.readiness = lambda: {"status": "no_data"}
         bot._format_poem = lambda: ""
         bot._handle_outage(1, 1)
         text = bot.send_message.call_args[0][1]
         assert text.startswith("Увага! Відключення заплановано") and "55%" in text
+
+    def test_an_outage_only_tomorrow_is_no_outage_today(self, bot):
+        """Its messages speak of today: tomorrow's outage isn't presented as today's."""
+        self._upcoming(bot, start=self.NOW + timedelta(days=1))
+        bot._format_poem = lambda: ""
+        bot._handle_outage(1, 1)
+        text = bot.send_message.call_args[0][1]
+        assert any(text.startswith(m.split("{")[0]) for m in telegram_bot.MESSAGES_OUTAGE_CLEAR)
 
 
 def test_long_polling_over_one_session(bot):

@@ -503,6 +503,10 @@ class TelegramBot:
             return
 
         status = self.outage_poller.get_outage_status()
+        # Today's windows only (the messages speak of today): an outage only
+        # tomorrow gets the "no outages today" answer
+        windows = [w for w in status.get("upcoming_windows") or []
+                   if w[0].date() == datetime.now().date()]
 
         if status["status"] == "active":
             end_time = status["end_time"].strftime("%H:%M")
@@ -518,8 +522,7 @@ class TelegramBot:
                 provider_name=self._get_provider_name(),
             )
 
-        elif status["status"] == "upcoming":
-            windows = status["upcoming_windows"]
+        elif status["status"] == "upcoming" and windows:
             start_dt, end_dt = windows[0]
             start_time = start_dt.strftime("%H:%M")
             end_time = end_dt.strftime("%H:%M")
@@ -566,7 +569,7 @@ class TelegramBot:
                 )
                 msg += f"\n\nТакож заплановано: {extra}"
 
-        elif status["status"] == "clear":
+        elif status["status"] in ("clear", "upcoming"):
             msg = self._pick_message(MESSAGES_OUTAGE_CLEAR,
                                      provider_name=self._get_provider_name())
 

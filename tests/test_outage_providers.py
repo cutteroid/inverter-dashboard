@@ -160,7 +160,25 @@ class TestOutageSchedulePollerStatus:
         tomorrow = now.date() + timedelta(days=1)
         status = self._status_at(now, {now.date(): [(23, 0, 24, 0)], tomorrow: [(0, 0, 2, 0), (8, 0, 9, 0)]})
         assert status["status"] == "upcoming"
-        assert status["upcoming_windows"] == [(now.replace(hour=23), datetime.combine(tomorrow, datetime.min.time()).replace(hour=2))]
+        assert status["upcoming_windows"] == [
+            (now.replace(hour=23), datetime.combine(tomorrow, datetime.min.time()).replace(hour=2)),
+            (datetime.combine(tomorrow, datetime.min.time()).replace(hour=8), datetime.combine(tomorrow, datetime.min.time()).replace(hour=9))]
+
+    def test_next_outage_tomorrow(self):
+        """None left today: the next one is tomorrow's, counted from the end of today's last."""
+        now = datetime.now().replace(hour=20, minute=0, second=0, microsecond=0)
+        tomorrow = now.date() + timedelta(days=1)
+        status = self._status_at(now, {now.date(): [(8, 0, 11, 0)], tomorrow: [(6, 0, 9, 0)]})
+        assert status["status"] == "upcoming"
+        assert status["upcoming_windows"] == [(datetime.combine(tomorrow, datetime.min.time()).replace(hour=6),
+                                               datetime.combine(tomorrow, datetime.min.time()).replace(hour=9))]
+        assert status["electricity_start"] == now.replace(hour=11)
+
+    def test_clear_when_tomorrow_has_none_or_is_not_published(self):
+        now = datetime.now().replace(hour=20, minute=0, second=0, microsecond=0)
+        tomorrow = now.date() + timedelta(days=1)
+        assert self._status_at(now, {now.date(): [(8, 0, 11, 0)], tomorrow: []})["status"] == "clear"
+        assert self._status_at(now, {now.date(): [(8, 0, 11, 0)]})["status"] == "clear"
 
     def test_a_gap_at_midnight_is_two_outages(self):
         now = datetime.now().replace(hour=23, minute=12, second=0, microsecond=0)
@@ -563,7 +581,7 @@ class TestPollerDays:
         }))
         poller._fetch_schedule()
         status = poller.get_outage_status()
-        assert status["status"] == "clear"
+        assert status["status"] == "upcoming"           # tomorrow's outage is the next one
         assert status["days"] == [
             {"date": today, "windows": []},
             {"date": tomorrow, "windows": [(

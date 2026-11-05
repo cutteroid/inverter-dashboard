@@ -162,7 +162,8 @@ class OutageSchedulePoller:
             across midnight counts as one, see merged_windows)
           - remaining_minutes: int (if active)
           - upcoming_windows: list of (start_dt, end_dt) starting later today
-            (if upcoming; the end may be tomorrow)
+            or tomorrow, once tomorrow is published (if upcoming); "clear":
+            none today, and none tomorrow or tomorrow not published yet
           - days: list of {"date", "windows": [(start_dt, end_dt)]} for today
             and, if published, tomorrow (unless unknown/error)
         """
@@ -189,13 +190,17 @@ class OutageSchedulePoller:
         active_start = None
         active_end = None
         upcoming = []
+        # Grid on since the last outage ended, or since midnight
+        electricity_start = datetime.combine(today, datetime.min.time())
 
         for start_dt, end_dt in merged_windows({**days, today: windows}):
             if start_dt <= now < end_dt:
                 active_start = start_dt
                 active_end = end_dt
-            elif now < start_dt and start_dt.date() == today:
+            elif now < start_dt and start_dt.date() <= today + timedelta(days=1):
                 upcoming.append((start_dt, end_dt))
+            elif end_dt <= now:
+                electricity_start = max(electricity_start, end_dt)
 
         if active_end:
             remaining = (active_end - now).total_seconds() / 60
@@ -206,13 +211,6 @@ class OutageSchedulePoller:
                 "remaining_minutes": int(remaining),
             }
         elif upcoming:
-            # Find when the current electricity period started
-            # (end of the most recent past outage window, or midnight)
-            electricity_start = datetime.combine(today, datetime.min.time())
-            for window in windows:
-                _, edt = window_datetimes(today, window)
-                if edt <= now:
-                    electricity_start = edt
             result = {
                 "status": "upcoming",
                 "upcoming_windows": upcoming,
