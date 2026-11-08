@@ -319,23 +319,33 @@ html.low-power .header {
 }
 
 
-/* Runtime estimate, right side of the header row (empty otherwise) */
-.battery-banner-runtime {
+/* Right side of a banner's header row (empty otherwise): the battery's time
+   estimate, the grid power now */
+.battery-banner-runtime,
+.banner-side-stat {
     margin-left: auto;
     text-align: right;
     white-space: nowrap;
 }
 
 
-.battery-runtime-value {
+.battery-runtime-value,
+.banner-side-value {
     font-size: 1.1rem;
     font-weight: 700;
     color: var(--text-soft);
     font-variant-numeric: tabular-nums;
 }
 
-body.fullscreen-mode .battery-runtime-value {
+body.fullscreen-mode .battery-runtime-value,
+body.fullscreen-mode .banner-side-value {
     font-size: 1.7rem;
+}
+
+/* The grid status stays on one line next to it ("Є СВІТЛО" wrapped on wide
+   fullscreen screens, making the banner taller) */
+.grid-status-value {
+    white-space: nowrap;
 }
 
 .battery-status-banner.battery-high .battery-banner-value {
@@ -3647,7 +3657,8 @@ html.low-power .pin-overlay {
         font-size: 1.6rem;
     }
 
-    body.fullscreen-mode .battery-runtime-value {
+    body.fullscreen-mode .battery-runtime-value,
+    body.fullscreen-mode .banner-side-value {
         font-size: 1.15rem;
     }
 

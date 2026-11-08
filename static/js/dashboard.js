@@ -1060,6 +1060,17 @@ function renderDashboard(data) {
         setI18nText(gridStatusLabel, 'grid_banner.no_power');
     }
 
+    // Grid power now, while the grid is on: which way in the label, as on the Grid card
+    var bannerPower = document.getElementById('grid-banner-power');
+    var showPower = isOnline && typeof data.grid_power === 'number';
+    bannerPower.hidden = !showPower;
+    if (showPower) {
+        setI18nText(document.getElementById('grid-banner-power-label'),
+            data.grid_power > 0 ? 'grid.import_now' : data.grid_power < 0 ? 'grid.export_now' : 'common.power_now');
+        var gp = powerParts(Math.abs(data.grid_power));
+        document.getElementById('grid-banner-power-value').textContent = gp.number + '\u00A0' + gp.unit;
+    }
+
     // Handle grid state changes (notification)
     handleGridStateChange(isOnline, data.grid_voltage);
 
