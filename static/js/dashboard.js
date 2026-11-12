@@ -1036,6 +1036,9 @@ function renderDashboard(data) {
     gridBanner.classList.toggle('offline', !isOnline);
     gridBanner.classList.toggle('partial', gridState === 'partial' || gridState === 'out_of_range' || !!meterCut);
     gridBanner.classList.toggle('meter-cut', !!meterCut);
+    // Grid there but not in use (out of range, or cut by the meter): the schedule
+    // line and bar read as with the grid on, no "Back in"
+    gridBanner.classList.toggle('grid-present', !!meterCut || gridState === 'out_of_range');
     if (meterCut === 'all') {
         setI18nText(gridStatusValue, 'grid_banner.cut_by_meter');
         setI18nText(gridStatusLabel, 'grid_banner.cut_by_meter_label');
@@ -1621,10 +1624,11 @@ function updateOutageInfo() {
     el.title = d.status === 'error' ? (d.error || '') : '';
     var now = new Date();
     var gridBanner = document.getElementById('grid-banner');
-    // Cut by the smart meter: the grid is there, so the schedule reads as with the grid on
-    var meterCut = gridBanner.classList.contains('meter-cut');
-    var gridOnline = gridBanner.classList.contains('online') || meterCut;
-    var gridOffline = gridBanner.classList.contains('offline') && !meterCut;
+    // Out of range or cut by the smart meter: the grid is there, so the schedule
+    // reads as with the grid on
+    var gridPresent = gridBanner.classList.contains('grid-present');
+    var gridOnline = gridBanner.classList.contains('online') || gridPresent;
+    var gridOffline = gridBanner.classList.contains('offline') && !gridPresent;
 
     if (!gridOnline && !gridOffline) {
         // Grid state unknown (no inverter data yet): report the schedule
@@ -1699,9 +1703,9 @@ function updateGridProgressBar() {
     var fill = document.getElementById('grid-banner-bar-fill');
     var d = outageScheduleData;
     var gridBanner = document.getElementById('grid-banner');
-    var meterCut = gridBanner && gridBanner.classList.contains('meter-cut');
-    var gridOffline = gridBanner && gridBanner.classList.contains('offline') && !meterCut;
-    var gridUnknown = gridBanner && !gridOffline && !meterCut && !gridBanner.classList.contains('online');
+    var gridPresent = gridBanner && gridBanner.classList.contains('grid-present');
+    var gridOffline = gridBanner && gridBanner.classList.contains('offline') && !gridPresent;
+    var gridUnknown = gridBanner && !gridOffline && !gridPresent && !gridBanner.classList.contains('online');
 
     if (!d || (d.status !== 'active' && d.status !== 'upcoming')) {
         bar.style.display = 'none';
