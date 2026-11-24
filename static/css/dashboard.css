@@ -1979,6 +1979,93 @@ body.fullscreen-mode .weather-forecast-dateline {
 .status-dot.loading { background: var(--amber-400); }
 .status-dot.error { background: var(--red-400); }
 
+/* Fullscreen: the dot alone is easy to miss on a wall tablet, so while the
+   readings aren't current (#connection-overlay, not [hidden]) the dashboard is
+   dimmed under a large card: red "offline" (no answer from the server), amber
+   "stale" (no new inverter readings). Touches pass through (scrolling, the
+   fullscreen exit). Outside fullscreen the status pill says it. */
+.connection-overlay {
+    --conn-rgb: var(--red-500-rgb);
+    --conn-text: var(--red-300);
+    display: none;
+}
+.connection-overlay.stale {
+    --conn-rgb: var(--amber-500-rgb);
+    --conn-text: var(--amber-300);
+}
+
+body.fullscreen-mode .connection-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 950;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    pointer-events: none;
+    background: radial-gradient(circle at center, rgba(var(--conn-rgb), 0.22), rgba(var(--shadow-rgb), 0.78) 70%);
+    backdrop-filter: grayscale(0.85);
+    -webkit-backdrop-filter: grayscale(0.85);
+}
+
+.connection-overlay-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    max-width: min(800px, 100%);
+    padding: clamp(24px, 5vh, 44px) clamp(24px, 6vw, 64px);
+    text-align: center;
+    color: var(--text-soft);
+    background: rgba(var(--dialog-rgb), 0.95);
+    border: 3px solid rgb(var(--conn-rgb));
+    border-radius: 24px;
+}
+
+/* The pulsing glow: an opacity animation, cheap on a wall tablet */
+.connection-overlay-card::before {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+    box-shadow: 0 0 60px 12px rgba(var(--conn-rgb), 0.65);
+    animation: connection-pulse 1.6s ease-in-out infinite alternate;
+    pointer-events: none;
+}
+
+@keyframes connection-pulse {
+    from { opacity: 0.25; }
+    to { opacity: 1; }
+}
+
+.connection-overlay-icon {
+    width: clamp(56px, 12vh, 96px);
+    height: clamp(56px, 12vh, 96px);
+    color: rgb(var(--conn-rgb));
+}
+.connection-overlay.offline .icon-stale,
+.connection-overlay.stale .icon-offline { display: none; }
+
+.connection-overlay-title {
+    font-size: clamp(2rem, 7vw, 4rem);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--conn-text);
+}
+
+.connection-overlay-detail {
+    font-size: clamp(1rem, 2.4vw, 1.4rem);
+}
+
+.connection-overlay-last {
+    font-size: clamp(0.9rem, 2vw, 1.15rem);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
 body.fullscreen-mode .weather-forecast-current {
     display: flex;
     align-items: center;

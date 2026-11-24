@@ -46,7 +46,12 @@
     "age_min": "{n} min ago",
     "age_h": "{n} h ago",
     "updated_at": "Readings from {time}",
-    "connection_failed": "Connection failed"
+    "connection_failed": "Connection failed",
+    "offline_title": "No connection",
+    "offline_detail": "The dashboard server isn't answering",
+    "stale_title": "No new data",
+    "stale_detail": "No new readings are coming from the inverter",
+    "last_data": "Last data at {time} · {age}"
   },
   "inverter": {
     "unsupported": "This inverter reports itself as a {type} (device type {code}). The dashboard can't read this inverter type yet, so the readings below are probably wrong.",

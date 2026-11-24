@@ -42,6 +42,30 @@
 <body>
     <div id="battery-overlay"></div>
 
+    <!-- Fullscreen only: dims the dashboard while its readings aren't current — red
+         when the server doesn't answer, amber when it answers without new inverter
+         readings (updateConnectionOverlay()). Touches pass through it. -->
+    <div class="connection-overlay" id="connection-overlay" role="status" hidden>
+        <div class="connection-overlay-card">
+            <svg class="connection-overlay-icon icon-offline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+                <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
+                <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path>
+                <path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path>
+                <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path>
+                <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                <line x1="12" y1="20" x2="12.01" y2="20"></line>
+            </svg>
+            <svg class="connection-overlay-icon icon-stale" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <div class="connection-overlay-title" id="connection-overlay-title"></div>
+            <div class="connection-overlay-detail" id="connection-overlay-detail"></div>
+            <div class="connection-overlay-last" id="connection-overlay-last" hidden></div>
+        </div>
+    </div>
+
     <!-- App bar: name on the left, live status on the right (the settings and
          fullscreen buttons sit at its right end, see .settings-toggle-btn / .fullscreen-btn) -->
     <header class="header">

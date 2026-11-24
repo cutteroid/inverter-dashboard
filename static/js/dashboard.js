@@ -913,7 +913,38 @@ function showStatus(key, params, state, title) {
     [pill, dot].forEach(function(el) {
         if (el) STATUS_STATES.forEach(function(s) { el.classList.toggle(s, s === state); });
     });
+    if (state === 'error') connectionProblem = key === 'status.connection_failed' ? 'offline' : 'stale';
+    else connectionProblem = state === 'stale' ? 'stale' : null;
+    updateConnectionOverlay();
 }
+
+// Fullscreen (shown by CSS there only): the overlay over the dashboard while its
+// readings aren't current. 'offline': no answer from the server (after
+// STALE_ERROR_MS); 'stale': it answers, but without new inverter readings (older
+// than LIVE_MAX_AGE_S, or an error). null: live, or still loading.
+var connectionProblem = null;
+
+function updateConnectionOverlay() {
+    var overlay = document.getElementById('connection-overlay');
+    if (!overlay) return;
+    if (overlay.hidden !== !connectionProblem) overlay.hidden = !connectionProblem;
+    if (!connectionProblem) return;
+    var offline = connectionProblem === 'offline';
+    overlay.classList.toggle('offline', offline);
+    overlay.classList.toggle('stale', !offline);
+    setI18nText(document.getElementById('connection-overlay-title'), offline ? 'status.offline_title' : 'status.stale_title');
+    setI18nText(document.getElementById('connection-overlay-detail'), offline ? 'status.offline_detail' : 'status.stale_detail');
+    var last = document.getElementById('connection-overlay-last');
+    if (last.hidden !== (dataTakenAt === null)) last.hidden = dataTakenAt === null;
+    if (dataTakenAt === null) return;
+    setI18nText(last, 'status.last_data', {
+        time: new Date(dataTakenAt).toLocaleTimeString(i18nLocale(), { hour: '2-digit', minute: '2-digit' }),
+        age: formatAge(Math.max(0, (Date.now() - dataTakenAt) / 1000))
+    });
+}
+
+// The age keeps counting while no answers arrive (renderLiveStatus doesn't run then)
+setInterval(function() { if (connectionProblem) updateConnectionOverlay(); }, 1000);
 
 function renderLiveStatus() {
     if (statusMode !== 'live' || dataTakenAt === null) return;
